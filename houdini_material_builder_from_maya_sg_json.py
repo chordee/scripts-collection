@@ -56,6 +56,9 @@ def getNode(node, upstream, connect_end, connect_start, shading_group):
                                     color = hou.Color((value[0], value[1], value[2]))
                                     v = color.hsv()[2] * weight
                                     p.set(v)
+
+                                # color space issue , colorcorrection instead
+
                                 if parm == 'srccolorspace':
                                     value = node[match_field[parm]]
                                     if value == 'Raw':
@@ -87,28 +90,37 @@ def getNode(node, upstream, connect_end, connect_start, shading_group):
                     vop.parm('type').set('normal')
 
             elif node_type == 'file':
+                cc = shading_group.createNode('colorcorrection')
+                cc.setNamedInput('ClrIn', vop, 'clr')
+                if vop.parm('srccolorspace').eval() == 'auto':
+                    cc.parm('Gamma').set(0.454)
+
                 if upstream[connect_end]['slot'] == 'outAlpha':
                     if upstream[connect_end]['node']['alphaIsLuminance'] == 'False':
                         vop.parm('signature').set('v4')
                         extended = shading_group.createNode('hvecgetcompon')
                         extended.parm('part').set(3)
-                        extended.setNamedInput('hvec', vop, 'clr')
+                        extended.setNamedInput('hvec', cc, 'ClrOut')
                         extended_nodes.append(extended)
+                        extended_nodes.append(cc)
+
                     else:
-                        extended = shading_group.createNode('rgbtohsv')
-                        extended.setNamedInput('rgb', vop, 'clr')
-                        extended2 = shading_group.createNode('vecgetcompon')
-                        extended2.parm('part').set(2)
-                        extended2.setNamedInput('vec', extended, 'hsv')
-                        extended_nodes.append(extended2)
+                        extended = shading_group.createNode('luminance')
+                        extended.setNamedInput('rgb', cc, 'ClrOut')
+                        extended_nodes.append(extended)
+                extended_nodes.append(cc)
 
             elif match_data[node_type]['name'] == 'turbnoise':
                 extended = shading_group.createNode('uvcoords')
                 vop.setNamedInput('pos', extended, 'uv')
 
-            if node_type == 'lamber':
+            elif node_type == 'lamber':
                 vop.parm('reflect').set(0)
                 vop.parm('metallic').set(0)
+
+            elif node_type == 'V Ramp':
+                if upstream[connect_end]['slot'] == 'outAlpha':
+                    vop.parm('ramptype').set(1)
 
 
         # sub node generator
@@ -128,7 +140,12 @@ def getNode(node, upstream, connect_end, connect_start, shading_group):
                         if parm_end != None:
                             if len(extends) > 0:
                                 if sub_data['type'] == 'file' and node[attr]['slot'] == 'outAlpha':
-                                    vop.setNamedInput(parm_end, extends[0], 'fval')
+                                    if node[attr]['node']['alphaIsLuminance']  == 'False':
+                                        vop.setNamedInput(parm_end, extends[0], 'fval')
+                                    else:
+                                        vop.setNamedInput(parm_end, extends[0], 'lum')
+                                elif sub_data['type'] == 'file':
+                                    vop.setNamedInput(parm_end, extends[0], 'ClrOut')
                             elif parm_start != None:
                                 vop.setNamedInput(parm_end, sub, parm_start)
                             else:
@@ -142,15 +159,17 @@ def getNode(node, upstream, connect_end, connect_start, shading_group):
 for data in datas:
     for sg in data:
         new_sg_node = hou.copyNodesTo([base_shadingGroup_node], matnet)[0]
-        new_sg_node.move(hou.Vector2(1.0, 0.0))
+        new_sg_node.move(hou.Vector2(2.0, 0.0))
         new_sg_node.setName(sg)
         for shader in data[sg]:
             layer, extends = getNode(data[sg][shader], data[sg], shader, '', new_sg_node)
             if shader == 'surfaceShader':
                 layer_unpack = new_sg_node.createNode('layerunpack')
+                surface_unoack = new_sg_node.createNode('surfaceexports')
                 surface_output = new_sg_node.node('surface_output')
                 surface_output.setNamedInput('F', layer_unpack, 'F')
                 surface_output.setNamedInput('N', layer_unpack, 'N')
                 surface_output.setNamedInput('Of', layer_unpack, 'Of')
+                surface_output.setNamedInput('Cf', surface_unoack, 'Cf')
+                surface_unoack.setNamedInput('layer', layer, 'layer')
                 layer_unpack.setNamedInput('layer', layer, 'layer')
-
