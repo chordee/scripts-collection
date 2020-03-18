@@ -1,4 +1,4 @@
-import hou, json
+import hou, json, re
 
 match_table_file = 'f:/dev/match_table.json'
 
@@ -77,7 +77,11 @@ def getNode(node, upstream, connect_end, connect_start, shading_group):
                     v = node['bumpValue']
                     if type(v) is dict:
                         if node['bumpValue']['node']['type'] == 'file':
-                            p.set(node['bumpValue']['node']['fileTextureName'])
+                            if node['bumpValue']['node']['uvTilingMode'] == 'UDIM (Mari)':
+                                p.set(node['bumpValue']['node']['fileTextureName'].replace('1001', '%(UDIM)d'))
+                            else:
+                                p.set(node['bumpValue']['node']['fileTextureName'])
+
                             exclude_list.append(node['bumpValue']['node']['name'])
                     vop.parm('type').set('bump')
 
@@ -85,11 +89,18 @@ def getNode(node, upstream, connect_end, connect_start, shading_group):
                     v = node['input']
                     if type(v) is dict:
                         if node['input']['node']['type'] == 'file':
-                            p.set(node['input']['node']['fileTextureName'])
+                            if node['input']['node']['uvTilingMode'] == 'UDIM (Mari)':
+                                p.set(node['input']['node']['fileTextureName'].replace('1001', '%(UDIM)d'))
+                            else:
+                                p.set(node['input']['node']['fileTextureName'])
                             exclude_list.append(node['input']['node']['name'])
                     vop.parm('type').set('normal')
 
             elif node_type == 'file':
+                if node['uvTilingMode'] == 'UDIM (Mari)':
+                    tmp = vop.parm('map').eval()
+                    vop.parm('map').set(tmp.replace('1001', '%(UDIM)d'))
+
                 cc = shading_group.createNode('colorcorrection')
                 cc.setNamedInput('ClrIn', vop, 'clr')
                 if vop.parm('srccolorspace').eval() == 'auto':
@@ -122,6 +133,8 @@ def getNode(node, upstream, connect_end, connect_start, shading_group):
                 if upstream[connect_end]['slot'] == 'outAlpha':
                     vop.parm('ramptype').set(1)
 
+            elif node_type == 'aiCurvature':
+                vop.parm('space').set(1)
 
         # sub node generator
 
@@ -165,11 +178,18 @@ for data in datas:
             layer, extends = getNode(data[sg][shader], data[sg], shader, '', new_sg_node)
             if shader == 'surfaceShader':
                 layer_unpack = new_sg_node.createNode('layerunpack')
-                surface_unoack = new_sg_node.createNode('surfaceexports')
+                compute_lighting = new_sg_node.createNode('computelighting')
                 surface_output = new_sg_node.node('surface_output')
-                surface_output.setNamedInput('F', layer_unpack, 'F')
+                surface_output.setNamedInput('F', compute_lighting, 'out_F')
                 surface_output.setNamedInput('N', layer_unpack, 'N')
-                surface_output.setNamedInput('Of', layer_unpack, 'Of')
-                surface_output.setNamedInput('Cf', surface_unoack, 'Cf')
-                surface_unoack.setNamedInput('layer', layer, 'layer')
-                layer_unpack.setNamedInput('layer', layer, 'layer')
+                surface_output.setNamedInput('Of', compute_lighting, 'out_Of')
+                surface_output.setNamedInput('Cf', compute_lighting, 'Cf')
+                if layer != None:
+                    compute_lighting.setNamedInput('layer', layer, 'layer')
+                    layer_unpack.setNamedInput('layer', layer, 'layer')
+            if shader == 'displacementShader':
+                if layer != None:
+                    disp_output = new_sg_node.node('displacement_output')
+                    disp_output.setNamedInput('P', layer, 'dispP')
+                    disp_output.setNamedInput('N', layer, 'dispN')
+

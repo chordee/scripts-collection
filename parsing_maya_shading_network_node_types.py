@@ -1,7 +1,9 @@
 
-import json
-json_file = 'd:/dev/mingShipB_shaders.json'
+import json,re
+json_file = 'd:/dev/mingShip_shaders.json'
 types = []
+texs = []
+
 with open(json_file, 'r') as f:
     data = json.load(f)
 
@@ -9,6 +11,10 @@ def getNode(node, par, connect_to, connect_from, shading_group):
     if 'name' in node.keys():
         #print(node['name'] + ' - ' + str(node['type']))
         types.append(node['type'])
+
+        if node['type'] == 'file':
+            texs.append(node['name'])
+            texs.append(node['fileTextureName'])
         if node['type'] == 'displacementShader':
             for s in node:
                 print(s + ': ')
@@ -29,4 +35,10 @@ if __name__ == '__main__':
 
 print(list(set(types)))
 
+tmp = list(set(texs))
+re_str = '.*1001.*'
+for t in tmp:
+    r = re.search(re_str, t) 
+    if r is not None:
+        print(t)
 
