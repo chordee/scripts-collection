@@ -1,11 +1,14 @@
 
 import maya.cmds as cmds
 import json
+
+# the json file to export
 json_file = 'd:/dev/mingShip_shaders.json'
 
+
+# select shading groups first
 sels = cmds.ls(sl = 1)
 sg_data = []
-i = 0
 
 def nodeInfo(node):
     des_data = {}
