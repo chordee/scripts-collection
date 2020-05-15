@@ -1,1 +1,99 @@
-{"file": {"name": "texture", "map": "fileTextureName", "width": "filterWidth", "clr": "outColor", "defclrr": "defaultColorR", "defclrg": "defaultColorG", "defclrb": "defaultColorB", "srccolorspace": "colorSpace"}, "aiStandardSurface": {"name": "principledshader", "albedomul": "base", "basecolor": "baseColor", "basecolorr": "baseColorR", "basecolorg": "baseColorG", "basecolorb": "baseColorB", "ssscolor": "subsurfaceColor", "ssscolorr": "subsurfaceColorR", "ssscolorg": "subsurfaceColorG", "ssscolorb": "subsurfaceColorB", "rough": "specularRoughness", "opaccolor": "opacity", "opaccolorr": "opacityR", "opaccolorg": "opacityG", "opaccolorb": "opacityB", "reflect": "specular", "ior": "specularIOR", "sheen": "sheen", "sss": "subsurface", "transparency": "transmission", "transcolor": "transmissionColor", "transcolorr": "transmissionColorR", "transcolorg": "transmissionColorG", "transcolorb": "transmissionColorB", "baseN": "normalCamera", "metallic": "metalness", "layer": "outColor", "coat": "coat", "coatrough": "coatRoughness"}, "aiNormalMap": {"name": "displacetexture", "outN": "outValue", "scale": "strength", "N": "normal", "normalflipy": "invertY", "normalflipx": "invertX"}, "bump2d": {"name": "displacetexture", "scale": "bumpValue", "outN": "outNormal", "N": "normalCamera", "normalflipx": "aiFlipR", "normalflipy": "aiFlipG"}, "aiCurvature": {"name": "curvature", "K": "outColorB", "convexscale": "multiply", "concavescale": "multiply"}, "noise": {"name": "turbnoise", "noise": "outAlpha", "amp": "amplitude"}, "fractal": {"name": "turbnoise", "noise": "outAlpha", "amp": "amplitude"}, "0": {"name": "rampparm"}, "aiMixShader": {"name": "layermix", "alpha": "mix", "A": "shader1", "B": "shader2"}, "V Ramp": {"name": "rampparm", "ramp": "outAlpha"}, "displacementShader": {"name": "displacenml", "scale": "scale", "amount": "displacement"}, "lamber": {"name": "principledshader", "albedomul": "diffuse", "basecolor": "color", "baseN": "normalCamera"}}
+{
+    "0": {
+        "name": "rampparm"
+    },
+    "file": {
+        "name": "texture",
+        "map": "fileTextureName",
+        "width": "filterWidth",
+        "clr": "outColor",
+        "defclrr": "defaultColorR",
+        "defclrg": "defaultColorG",
+        "defclrb": "defaultColorB",
+        "srccolorspace": "colorSpace"
+    },
+    "aiStandardSurface": {
+        "name": "principledshader",
+        "albedomul": "base",
+        "basecolor": "baseColor",
+        "basecolorr": "baseColorR",
+        "basecolorg": "baseColorG",
+        "basecolorb": "baseColorB",
+        "ssscolor": "subsurfaceColor",
+        "ssscolorr": "subsurfaceColorR",
+        "ssscolorg": "subsurfaceColorG",
+        "ssscolorb": "subsurfaceColorB",
+        "rough": "specularRoughness",
+        "opaccolor": "opacity",
+        "opaccolorr": "opacityR",
+        "opaccolorg": "opacityG",
+        "opaccolorb": "opacityB",
+        "reflect": "specular",
+        "ior": "specularIOR",
+        "sheen": "sheen",
+        "sss": "subsurface",
+        "transparency": "transmission",
+        "transcolor": "transmissionColor",
+        "transcolorr": "transmissionColorR",
+        "transcolorg": "transmissionColorG",
+        "transcolorb": "transmissionColorB",
+        "baseN": "normalCamera",
+        "metallic": "metalness",
+        "layer": "outColor",
+        "coat": "coat",
+        "coatrough": "coatRoughness"
+    },
+    "aiNormalMap": {
+        "name": "displacetexture",
+        "outN": "outValue",
+        "scale": "strength",
+        "N": "normal",
+        "normalflipy": "invertY",
+        "normalflipx": "invertX"
+    },
+    "bump2d": {
+        "name": "displacetexture",
+        "scale": "bumpValue",
+        "outN": "outNormal",
+        "N": "normalCamera",
+        "normalflipx": "aiFlipR",
+        "normalflipy": "aiFlipG"
+    },
+    "aiCurvature": {
+        "name": "curvature",
+        "K": "outColorB",
+        "convexscale": "multiply",
+        "concavescale": "multiply"
+    },
+    "noise": {
+        "name": "turbnoise",
+        "noise": "outAlpha",
+        "amp": "amplitude"
+    },
+    "fractal": {
+        "name": "turbnoise",
+        "noise": "outAlpha",
+        "amp": "amplitude"
+    },
+    "aiMixShader": {
+        "name": "layermix",
+        "alpha": "mix",
+        "A": "shader1",
+        "B": "shader2"
+    },
+    "V Ramp": {
+        "name": "rampparm",
+        "ramp": "outAlpha"
+    },
+    "displacementShader": {
+        "name": "displacenml",
+        "scale": "scale",
+        "amount": "displacement"
+    },
+    "lamber": {
+        "name": "principledshader",
+        "albedomul": "diffuse",
+        "basecolor": "color",
+        "baseN": "normalCamera"
+    }
+}
