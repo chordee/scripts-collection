@@ -6,6 +6,7 @@ import json
 
 json_file = cmds.fileDialog2(fm = 0, startingDirectory = 'C:/', fileFilter = "JSON (*.json)")[0]
 
+
 # select shading groups first
 sels = cmds.ls(sl = 1)
 sg_data = []
