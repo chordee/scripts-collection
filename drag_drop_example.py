@@ -1,12 +1,12 @@
 # -*- coding: UTF-8 -*_ 
 
 import sys
-from PySide2.QtWidgets import *
+from PySide2 import QtWidgets
 
 
-class MainWindow(QMainWindow):
+class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
-        QMainWindow.__init__(self)
+        super(MainWindow, self).__init__()
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, e):
@@ -26,7 +26,7 @@ class MainWindow(QMainWindow):
             print("Dropped file: " + file_name, url.toString())
 
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
+    app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.show()
     app.exec_()
