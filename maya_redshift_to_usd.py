@@ -176,6 +176,34 @@ class RedshiftToUSD:
 
                 'post_proc': self.post_Nothing
             },
+            'RedshiftMaterialBlender':{
+                'info:id': {'name': 'redshift::MaterialBlender'},
+                'outColor': {'name': 'outDisplacementVector', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'baseColor': {'name': 'baseInput', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+
+                'layerColor1': {'name': 'layerColor1', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layerColor2': {'name': 'layerColor2', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layerColor3': {'name': 'layerColor3', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layerColor4': {'name': 'layerColor4', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layerColor5': {'name': 'layerColor5', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layerColor6': {'name': 'layerColor6', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+
+                'blendColor1': {'name': 'blendColor1', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'blendColor2': {'name': 'blendColor2', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'blendColor3': {'name': 'blendColor3', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'blendColor4': {'name': 'blendColor4', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'blendColor5': {'name': 'blendColor5', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'blendColor6': {'name': 'blendColor6', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+
+                'additiveMode1': {'name': 'additiveMode1', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'additiveMode2': {'name': 'additiveMode2', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'additiveMode3': {'name': 'additiveMode3', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'additiveMode4': {'name': 'additiveMode4', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'additiveMode5': {'name': 'additiveMode5', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'additiveMode6': {'name': 'additiveMode6', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'post_proc': self.post_Nothing
+            },
             'RedshiftDisplacement': {
                 'info:id': {'name': 'redshift::Displacement'},
                 'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
