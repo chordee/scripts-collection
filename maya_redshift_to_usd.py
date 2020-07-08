@@ -1,6 +1,8 @@
 import maya.cmds as cmds
 from pxr import Sdf, Usd, UsdShade, UsdGeom
 
+# Maya Attributes to USD post process
+
 def Same(arg):
     return arg
 
@@ -8,6 +10,9 @@ def FloatToVector(arg):
     return (arg, arg, arg)
 
 def MayaArrayToVector(arg):
+    return arg[0]
+
+def MayaArrayToFloat2(arg):
     return arg[0]
 
 def IntToString(arg):
@@ -74,7 +79,7 @@ class RedshiftToUSD:
                 'coat_transmittance': {'name': 'coat_transmittance', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
                 'coat_thickness': {'name': 'coat_thickness', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
 
-                'bump_input': {'name': 'bump_input', 'type': Sdf.ValueTypeNames.Int, 'convert': MayaArrayToInt},
+                'bump_input': {'name': 'bump_input', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
                 'emission_color': {'name': 'emission_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
                 'emission_weight': {'name': 'emission_weight', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
 
@@ -119,6 +124,20 @@ class RedshiftToUSD:
 
                 'post_proc': self.post_Nothing
             },
+            'RedshiftDisplacement': {
+                'info:id': {'name': 'redshift::Displacement'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'scale': {'name': 'scale', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'texMap': {'name': 'texMap', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'map_encoding': {'name': 'map_encoding', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'space_type': {'name': 'space_type', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'newrange_max': {'name': 'newrange_max', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'newrange_min': {'name': 'newrange_min', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'oldrange_max': {'name': 'oldrange_max', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'oldrange_min': {'name': 'oldrange_min', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+
+                'post_proc': self.post_Nothing
+            },
             'displacementShader': {
                 'info:id': {'name': 'redshift::Displacement'},
                 'displacement': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': FloatToVector},
@@ -131,12 +150,42 @@ class RedshiftToUSD:
                 'output': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
                 'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
                 'outAlpha': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': FloatToVector},
+                'colorGain': {'name': 'color_multiplier', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'colorOffset': {'name': 'color_offset', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'defaultColor': {'name': 'invalid_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'alphaOffset': {'name': 'alpha_offset', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'alphaGain': {'name': 'alpha_multiplier', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
                 'fileTextureName': {'name': 'tex0', 'type': Sdf.ValueTypeNames.Asset, 'convert': Same},
+                'alphaIsLumianace': {'name': 'alpha_is_luminance', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'rsFilterEnable': {'name': 'filter_enable_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'rsMipBias': {'name': 'mip_bias', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'rsBicubicFiltering': {'name': 'filter_bicubic', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
 
                 'post_proc': self.post_TextureSampler
             },
-            'RedshiftNormalMap':{
+            'RedshiftBumpMap':{
                 'info:id': {'name': 'redshift::BumpMap'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'input': {'name': 'input', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'inputType': {'name': 'inputType', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'scale': {'name': 'scale', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'flipY': {'name': 'flipY', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'unbiasedNormalMap': {'name': 'unbiasedNormalMap', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftNormalMap':{
+                'info:id': {'name': 'redshift::NormalMap'},
+                'outDisplacementVector': {'name': 'outDisplacementVector', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'scale': {'name': 'scale', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'eccmax': {'name': 'eccmax', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'flipY': {'name': 'flipY', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'alt_x': {'name': 'alt_x', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'alt_y': {'name': 'alt_y', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'tex0': {'name': 'tex0', 'type': Sdf.ValueTypeNames.Asset, 'convert': Same},
+                'min_uv': {'name': 'min_uv', 'type': Sdf.ValueTypeNames.Float2, 'convert': MayaArrayToFloat2},
+                'max_uv': {'name': 'max_uv', 'type': Sdf.ValueTypeNames.Float2, 'convert': MayaArrayToFloat2},
+                'unbiasedNormalMap': {'name': 'unbiasedNormalMap', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
 
                 'post_proc': self.post_Nothing
             },
@@ -172,6 +221,8 @@ class RedshiftToUSD:
 
 
     def Run(self):
+
+        # Build Stage
         self.stage = Usd.Stage.CreateNew(self.filename)
         root = UsdGeom.Scope.Define(self.stage, '/' + self.scope)
 
@@ -180,7 +231,7 @@ class RedshiftToUSD:
             usdShaderCollector = UsdShade.Shader.Define(self.stage, usdShadingGroup.GetPath().AppendChild(shadingGroup))
             usdShaderCollector.CreateIdAttr('redshift_usd_material')
             usdShaderCollector.CreateOutput('outputs:Shader', Sdf.ValueTypeNames.Token)
-            usdShadingGroup.CreateOutput('Redshift:surface', Sdf.ValueTypeNames.Token).ConnectToSource(usdShaderCollector, 'outputs:Shader')
+            usdShadingGroup.CreateOutput('Redshift:surface', Sdf.ValueTypeNames.Token).ConnectToSource(usdShaderCollector, 'Shader')
 
             surfaceShaders = cmds.listConnections(shadingGroup + '.surfaceShader')
             if len(surfaceShaders) > 0:
@@ -192,14 +243,16 @@ class RedshiftToUSD:
             if len(displacementShaders) > 0:
                 displacementShader = displacementShaders[0]
                 usdShaderCollector.CreateInput('Displacement', Sdf.ValueTypeNames.Float3)
-                self.rebuildShader(source_shader = displacementShader, usd_target = usdShaderCollector, source_attr = 'displacement', target_attr = 'Displacement', usdShadingGroup = usdShadingGroup)
+                self.rebuildShader(source_shader = displacementShader, usd_target = usdShaderCollector, source_attr = 'out', target_attr = 'Displacement', usdShadingGroup = usdShadingGroup)
 
 
     def rebuildShader(self, source_shader, usd_target, source_attr, target_attr ,usdShadingGroup):
 
         nodeType = cmds.nodeType(source_shader)
         
-        if nodeType in self.translator.keys():
+        # Creating the Shader
+
+        if nodeType in self.translator.keys(): # Check nodeType if in translator dictionary
             attr_table = self.translator[cmds.nodeType(source_shader)]
             if source_shader not in [x.GetName() for x in usdShadingGroup.GetPrim().GetAllChildren()]:
                 usdShader = UsdShade.Shader.Define(self.stage, usdShadingGroup.GetPath().AppendChild(source_shader))
@@ -207,15 +260,19 @@ class RedshiftToUSD:
             else:
                 usdShader = UsdShade.Shader.Get(self.stage, usdShadingGroup.GetPath().AppendChild(source_shader))
 
-            if source_attr in attr_table.keys():
+            if source_attr in attr_table.keys(): # Check connection input if in translator dictionary
                 if attr_table[source_attr]['name'] not in [ x.GetBaseName() for x in usdShader.GetOutputs() ]:
                     usdShaderOutput = usdShader.CreateOutput(attr_table[source_attr]['name'], attr_table[source_attr]['type'])
                     
                 else:
                     usdShaderOutput = usdShader.GetOutput(attr_table[source_attr]['name'])
+
+                # Connect
                 usd_target.GetInput(target_attr).ConnectToSource(usdShaderOutput)
             else:
                 return
+
+            # Creating the attributes and setting the value 
 
             for attr in cmds.listAttr(source_shader, hd = True):
                 if attr in attr_table.keys():
@@ -225,7 +282,7 @@ class RedshiftToUSD:
             for connectDest, connectSource in zip(connections, connections):
                 connectSourceNode = connectSource.split('.')[0]
                 connectSourceAttr = connectSource.split('.')[-1]
-                connectDestNode = connectDest.split('.')[0]
+                # connectDestNode = connectDest.split('.')[0]
                 connectDestAttr = connectDest.split('.')[-1]
                 if connectDestAttr in attr_table.keys():
                     self.rebuildShader(source_shader = connectSourceNode, usd_target = usdShader, source_attr = connectSourceAttr, target_attr = attr_table[connectDestAttr]['name'], usdShadingGroup = usdShadingGroup)
@@ -234,11 +291,30 @@ class RedshiftToUSD:
         else:
             return
 
+    # USD Shader post process
+
     def post_Nothing(self, mayaShader, usdShader):
         return
         
     def post_TextureSampler(self, mayaShader, usdShader):
+        color_space = cmds.getAttr(mayaShader + '.colorSpace')
+        if color_space == 'sRGB':
+            usdShader.CreateInput('tex0_srgb', Sdf.ValueTypeNames.Int).Set(1)
+        else:
+            usdShader.CreateInput('tex0_srgb', Sdf.ValueTypeNames.Int).Set(0)
+        connections = cmds.listConnections(mayaShader + '.uvCoord')
+        if connections and cmds.nodeType(connections[0]) == 'place2dTexture':
+            uv_coord = connections[0]
+            usdShader.CreateInput('mirrorU', Sdf.ValueTypeNames.Int).Set(cmds.getAttr(uv_coord + '.mirrorU'))
+            usdShader.CreateInput('mirrorV', Sdf.ValueTypeNames.Int).Set(cmds.getAttr(uv_coord + '.mirrorV'))
+            usdShader.CreateInput('wrapU', Sdf.ValueTypeNames.Int).Set(cmds.getAttr(uv_coord + '.wrapU'))
+            usdShader.CreateInput('wrapV', Sdf.ValueTypeNames.Int).Set(cmds.getAttr(uv_coord + '.wrapV'))
+            usdShader.CreateInput('rotate', Sdf.ValueTypeNames.Float).Set(cmds.getAttr(uv_coord + '.rotateUV'))
+            usdShader.CreateInput('offset', Sdf.ValueTypeNames.Float2).Set(cmds.getAttr(uv_coord + '.offset')[0])
+
         return
+
+    # Save Stage to File
 
     def Save(self):
         self.stage.Save()
