@@ -127,6 +127,55 @@ class RedshiftToUSD:
 
                 'post_proc': self.post_Nothing
             },
+            'RedshiftSubSurfaceScatter': {
+                'info:id': {'name': 'redshift::SubSurfaceScatter'},
+                'preset': {'name': 'preset', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'sub_surface_color': {'name': 'sub_surface_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'diffuse_amount': {'name': 'diffuse_amount', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'no_diffuse_bump': {'name': 'no_diffuse_bump', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'mode': {'name': 'mode', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'samples': {'name': 'samples', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'singleScatter_on': {'name': 'singleScatter_on', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'phase': {'name': 'phase', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'include_mode': {'name': 'include_mode', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'scatter_color': {'name': 'scatter_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'scatter_radius': {'name': 'scatter_radius', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'refl_color': {'name': 'refl_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'reflectivity': {'name': 'reflectivity', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'refl_gloss': {'name': 'refl_gloss', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'refl_gloss_samples': {'name': 'refl_gloss_samples', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refl_brdf': {'name': 'refl_brdf', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'no_refl_bump': {'name': 'no_refl_bump', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'enableFresnel': {'name': 'enableFresnel', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refl_fresnel_useior': {'name': 'refl_fresnel_useior', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refl_fresnel_0_degree_refl': {'name': 'refl_fresnel_0_degree_refl', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'refl_fresnel_90_degree_refl': {'name': 'refl_fresnel_90_degree_refl', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'refl_fresnel_curve': {'name': 'refl_fresnel_curve', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'refl_enablecutoff': {'name': 'refl_enablecutoff', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refl_cutoff': {'name': 'refl_cutoff', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'skip_inside_refl': {'name': 'skip_inside_refl', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'depth_override': {'name': 'depth_override', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refl_depth': {'name': 'refl_depth', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refl_hl_only': {'name': 'refl_hl_only', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'refr_depth': {'name': 'refr_depth', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refr_cutoff': {'name': 'refr_cutoff', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'refr_enablecutoff': {'name': 'refr_enablecutoff', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'additional_bump_mode': {'name': 'additional_bump_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'bump_input': {'name': 'bump_input', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                
+                'ss_nostransparency': {'name': 'ss_nostransparency', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'ss_transmittance': {'name': 'ss_transmittance', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'ss_overrideCoeffs': {'name': 'ss_overrideCoeffs', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'ss_amount': {'name': 'ss_amount', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'ss_thickness': {'name': 'ss_thickness', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'ss_samples': {'name': 'ss_samples', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+
+                'post_proc': self.post_Nothing
+            },
             'RedshiftDisplacement': {
                 'info:id': {'name': 'redshift::Displacement'},
                 'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
@@ -452,6 +501,10 @@ class RedshiftToUSD:
     def post_Nothing(self, mayaShader, usdShader):
         return
         
+
+    def displacemenShader(self, mayaShader, usdShader):
+        return
+
     def post_TextureSampler(self, mayaShader, usdShader):
         color_space = cmds.getAttr(mayaShader + '.colorSpace')
         if color_space == 'sRGB':
