@@ -21,6 +21,9 @@ def IntToString(arg):
 def VectorToVector4(arg):
     return (arg[0][0], arg[0][1], arg[0][2], 1)
 
+def MayaArrayToFloat(arg):
+    return arg[0][0]
+
 def MayaArrayToInt(arg):
     return int(arg[0][0])
 
@@ -138,6 +141,22 @@ class RedshiftToUSD:
 
                 'post_proc': self.post_Nothing
             },
+            'RedshiftDisplacementBlender':{
+                'info:id': {'name': 'redshift::DisplacementBlender'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'baseInput': {'name': 'baseInput', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'displaceInput0': {'name': 'displaceInput0', 'type': Sdf.ValueTypeNames.Float, 'convert': MayaArrayToFloat},
+                'displaceInput1': {'name': 'displaceInput1', 'type': Sdf.ValueTypeNames.Float, 'convert': MayaArrayToFloat},
+                'displaceInput2': {'name': 'displaceInput2', 'type': Sdf.ValueTypeNames.Float, 'convert': MayaArrayToFloat},
+
+                'displaceWeight0': {'name': 'displaceWeight0', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'displaceWeight1': {'name': 'displaceWeight1', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'displaceWeight2': {'name': 'displaceWeight2', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+
+                'additive': {'name': 'additive', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'post_proc': self.post_Nothing
+            },
             'displacementShader': {
                 'info:id': {'name': 'redshift::Displacement'},
                 'displacement': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': FloatToVector},
@@ -174,6 +193,22 @@ class RedshiftToUSD:
 
                 'post_proc': self.post_Nothing
             },
+            'RedshiftBumpBlender':{
+                'info:id': {'name': 'redshift::BumpBlender'},
+                'outColor': {'name': 'outDisplacementVector', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'baseInput': {'name': 'baseInput', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'bumpInput0': {'name': 'bumpInput0', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'bumpInput1': {'name': 'bumpInput1', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'bumpInput2': {'name': 'bumpInput2', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+
+                'bumpWeight0': {'name': 'bumpWeight0', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'bumpWeight1': {'name': 'bumpWeight1', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'bumpWeight2': {'name': 'bumpWeight2', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+
+                'additive': {'name': 'additive', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'post_proc': self.post_Nothing
+            },
             'RedshiftNormalMap':{
                 'info:id': {'name': 'redshift::NormalMap'},
                 'outDisplacementVector': {'name': 'outDisplacementVector', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
@@ -189,6 +224,72 @@ class RedshiftToUSD:
 
                 'post_proc': self.post_Nothing
             },
+            'RedshiftAmbientOcclusion':{
+                'info:id': {'name': 'redshift::AmbientOcclusion'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'bright': {'name': 'bright', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'dark': {'name': 'dark', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+
+                'spread': {'name': 'spread', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'fallOff': {'name': 'fallOff', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'maxDistance': {'name': 'maxDistance', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'numSamples': {'name': 'numSamples', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'reflective': {'name': 'reflective', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'invert': {'name': 'invert', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'occlusionInAlpha': {'name': 'occlusionInAlpha', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'sameObjectOnly': {'name': 'sameObjectOnly', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+
+                'outputMode': {'name': 'outputMode', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftCurvature':{
+                'info:id': {'name': 'redshift::Curvature'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'radius': {'name': 'radius', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'inputMin': {'name': 'inputMin', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'inputMax': {'name': 'inputMax', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'contrastVal': {'name': 'contrastVal', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'contrastPivot': {'name': 'contrastPivot', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'bias': {'name': 'bias', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'gain': {'name': 'gain', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'outputMin': {'name': 'outputMin', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'outputMax': {'name': 'outputMax', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'clampMin': {'name': 'clampMin', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'clampMax': {'name': 'clampMax', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+
+                'mode': {'name': 'mode', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'numSamples': {'name': 'numSamples', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'sameObjectOnly': {'name': 'sameObjectOnly', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'clampEnable': {'name': 'clampEnable', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'clampExpand': {'name': 'clampExpand', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftRoundCorners':{
+                'info:id': {'name': 'redshift::RoundCorners'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'radius': {'name': 'radius', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'numSamples': {'name': 'numSamples', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'sameObjectOnly': {'name': 'sameObjectOnly', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftFresnel':{
+                'info:id': {'name': 'redshift::Fresnel'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'facing_color': {'name': 'facing_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'perp_color': {'name': 'perp_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'ior': {'name': 'ior', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'user_curve': {'name': 'user_curve', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'extinction_coeff': {'name': 'extinction_coeff', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'correct_intensity': {'name': 'correct_intensity', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'fresnel_useior': {'name': 'fresnel_useior', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'bump_input': {'name': 'bump_input', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                
+                'post_proc': self.post_Nothing
+            },
             'RedshiftColorCorrection':{
                 'info:id': {'name': 'redshift::RSColorCorrection'},
                 'input': {'name': 'input', 'type': Sdf.ValueTypeNames.Color4f, 'convert': VectorToVector4},
@@ -198,6 +299,61 @@ class RedshiftToUSD:
                 'hue': {'name': 'hue', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
                 'saturation': {'name': 'saturation', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
                 'level': {'name': 'level', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftNoise':{
+                'info:id': {'name': 'redshift::RSNoise'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'color1': {'name': 'color1', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'color2': {'name': 'color2', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'range_min': {'name': 'range_min', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'range_max': {'name': 'range_max', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'range_bias': {'name': 'range_bias', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'noise_gain': {'name': 'noise_gain', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'noise_scale': {'name': 'noise_scale', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'distort': {'name': 'distort', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'distort_scale': {'name': 'distort_scale', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'time': {'name': 'time', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'time_constant': {'name': 'time_constant', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'coord_scale_global': {'name': 'coord_scale_global', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'coord_scale': {'name': 'coord_scale', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'coord_offset': {'name': 'coord_offset', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+
+                'noise_type': {'name': 'noise_type', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'time_source': {'name': 'time_source', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'coord_source': {'name': 'coord_source', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'color_invert': {'name': 'color_invert', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'noise_complexity': {'name': 'noise_complexity', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftMaxonNoise':{
+                'info:id': {'name': 'redshift::MaxonNoise'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'color1': {'name': 'color1', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'color2': {'name': 'color2', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'octaves': {'name': 'octaves', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'lacunarity': {'name': 'lacunarity', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'gain': {'name': 'gain', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'exponent': {'name': 'exponent', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'animation_speed': {'name': 'animation_speed', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+
+                'animation_time': {'name': 'animation_time', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'cycles': {'name': 'cycles', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'low_clip': {'name': 'low_clip', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'high_clip': {'name': 'high_clip', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'brightness': {'name': 'brightness', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'contrast': {'name': 'contrast', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'coord_scale_global': {'name': 'coord_scale_global', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'coord_scale': {'name': 'coord_scale', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'coord_offset': {'name': 'coord_offset', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+
+                'noise_type': {'name': 'noise_type', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'animation_source': {'name': 'animation_source', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'absolute': {'name': 'absolute', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'coord_source': {'name': 'coord_source', 'type': Sdf.ValueTypeNames.Token, 'convert': IntToString},
+                'seed': {'name': 'seed', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
                 
                 'post_proc': self.post_Nothing
             },
