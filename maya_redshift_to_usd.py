@@ -970,14 +970,14 @@ class RedshiftShadersToUSD:
             usdShadingGroup.CreateOutput('Redshift:surface', Sdf.ValueTypeNames.Token).ConnectToSource(usdShaderCollector, 'Shader')
 
             surfaceShaders = cmds.listConnections(shadingGroup + '.surfaceShader')
-            if len(surfaceShaders) > 0:
+            if surfaceShaders:
                 surfaceShader = surfaceShaders[0]
                 usdShaderCollector.CreateInput('Surface', Sdf.ValueTypeNames.Color3f)
                 source_attr = cmds.listConnections(shadingGroup + '.surfaceShader', p = True)[0].split('.')[-1]
                 self.rebuildShader(source_shader = surfaceShader, usd_target = usdShaderCollector, source_attr = source_attr, target_attr = 'Surface', usdShadingGroup = usdShadingGroup)
             
             displacementShaders = cmds.listConnections(shadingGroup + '.displacementShader')
-            if len(displacementShaders) > 0:
+            if displacementShaders:
                 displacementShader = displacementShaders[0]
                 usdShaderCollector.CreateInput('Displacement', Sdf.ValueTypeNames.Float3)
                 source_attr = cmds.listConnections(shadingGroup + '.displacementShader', p = True)[0].split('.')[-1]
@@ -1018,15 +1018,16 @@ class RedshiftShadersToUSD:
                     usdShader.CreateInput(attr_table[attr]['name'], attr_table[attr]['type']).Set(attr_table[attr]['convert'](cmds.getAttr(source_shader + '.' + attr)))
 
             if attr_table['post_proc'](source_shader, usdShader, usdShadingGroup):
-                connections = iter(cmds.listConnections(source_shader, d = False, c = True, p = True))
-                for connectDest, connectSource in zip(connections, connections):
-                    connectSourceNode = connectSource.split('.')[0]
-                    connectSourceAttr = connectSource.split('.')[-1]
-                    # connectDestNode = connectDest.split('.')[0]
-                    connectDestAttr = connectDest.split('.')[-1]
-                    if connectDestAttr in attr_table.keys():
-                        self.rebuildShader(source_shader = connectSourceNode, usd_target = usdShader, source_attr = connectSourceAttr, target_attr = attr_table[connectDestAttr]['name'], usdShadingGroup = usdShadingGroup)
-        
+                if cmds.listConnections(source_shader, d = False, c = True, p = True):
+                    connections = iter(cmds.listConnections(source_shader, d = False, c = True, p = True))
+                    for connectDest, connectSource in zip(connections, connections):
+                        connectSourceNode = connectSource.split('.')[0]
+                        connectSourceAttr = connectSource.split('.')[-1]
+                        # connectDestNode = connectDest.split('.')[0]
+                        connectDestAttr = connectDest.split('.')[-1]
+                        if connectDestAttr in attr_table.keys():
+                            self.rebuildShader(source_shader = connectSourceNode, usd_target = usdShader, source_attr = connectSourceAttr, target_attr = attr_table[connectDestAttr]['name'], usdShadingGroup = usdShadingGroup)
+            
         else:
             return
 
@@ -1038,13 +1039,11 @@ class RedshiftShadersToUSD:
 
     def post_displacemenShader(self, mayaShader, usdShader, usdShadingGroup):
         if cmds.listConnections(mayaShader + '.displacement', s = True, d = False, p = True):
-            source_attr = cmds.listConnections(mayaShader + '.displacement', s = True, d = False, p = True)[0].split('.')[-1]
-            connectSourceNode = cmds.listConnections(mayaShader + '.displacement', s = True, d = False, p = True)[0].split('.')[0]
+            connectSourceNode, source_attr = cmds.listConnections(mayaShader + '.displacement', s = True, d = False, p = True)[0].split('.')
             usdShader.CreateInput('scale', Sdf.ValueTypeNames.Float)
             self.rebuildShader(source_shader = connectSourceNode, usd_target = usdShader, source_attr = source_attr, target_attr = 'scale', usdShadingGroup = usdShadingGroup)
         elif cmds.listConnections(mayaShader + '.vectorDisplacement', s = True, d = False, p = True):
-            source_attr = cmds.listConnections(mayaShader + '.vectorDisplacement', s = True, d = False, p = True)[0].split('.')[-1]
-            connectSourceNode = cmds.listConnections(mayaShader + '.vectorDisplacement', s = True, d = False, p = True)[0].split('.')[0]
+            connectSourceNode, source_attr = cmds.listConnections(mayaShader + '.vectorDisplacement', s = True, d = False, p = True)[0].split('.')
             usdShader.CreateInput('texMap', Sdf.ValueTypeNames.Color3f)
             self.rebuildShader(source_shader = connectSourceNode, usd_target = usdShader, source_attr = source_attr, target_attr = 'texMap', usdShadingGroup = usdShadingGroup)
         return False
