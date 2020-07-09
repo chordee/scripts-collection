@@ -30,7 +30,6 @@ def MayaArrayToInt(arg):
 def post_Nothong():
     return
 
-
 class RedshiftToUSD:
 
     def __init__(self, shadingGroups = None, scope = 'Looks', filename = None):
@@ -566,6 +565,204 @@ class RedshiftToUSD:
 
                 'post_proc': self.post_TextureSampler
             },
+            'RedshiftWireFrame':{
+                'info:id': {'name': 'redshift::WireFrame'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'polyColor': {'name': 'polyColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'wireColor': {'name': 'wireColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'thickness': {'name': 'thickness', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'showHiddenEdges': {'name': 'showHiddenEdges', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftStoreColorToAOV':{
+                'info:id': {'name': 'redshift::StoreColorToAOV'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'beauty_input': {'name': 'beauty_input', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftStoreIntegerToAOV':{
+                'info:id': {'name': 'redshift::StoreIntegerToAOV'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'beauty_input': {'name': 'beauty_input', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftStoreScalarToAOV':{
+                'info:id': {'name': 'redshift::StoreScalarToAOV'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'beauty_input': {'name': 'beauty_input', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftUserDataColor':{
+                'info:id': {'name': 'redshift::RSUserDataColor'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'attributeName': {'name': 'attributeName', 'type': Sdf.ValueTypeNames.String, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftUserDataScalar':{
+                'info:id': {'name': 'redshift::RSUserDataScalar'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'attributeName': {'name': 'attributeName', 'type': Sdf.ValueTypeNames.String, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftUserDataVector':{
+                'info:id': {'name': 'redshift::RSUserDataVector'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'attributeName': {'name': 'attributeName', 'type': Sdf.ValueTypeNames.String, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftUserDataInteger':{
+                'info:id': {'name': 'redshift::RSUserDataInteger'},
+                'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'attributeName': {'name': 'attributeName', 'type': Sdf.ValueTypeNames.String, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftTriPlanar':{
+                'info:id': {'name': 'redshift::TriPlanar'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'outAlpha': {'name': 'outAlpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'sameImageOnEachAxis': {'name': 'sameImageOnEachAxis', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'imageX': {'name': 'imageX', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'imageXAlpha': {'name': 'imageXAlpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'imageY': {'name': 'imageY', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'imageYAlpha': {'name': 'imageYAlpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'imageZ': {'name': 'imageZ', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'imageZAlpha': {'name': 'imageZAlpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'blendAmount': {'name': 'blendAmount', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'blendCurve': {'name': 'blendCurve', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'scale': {'name': 'scale', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'offset': {'name': 'offset', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'rotation': {'name': 'rotation', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'projSpaceType': {'name': 'projSpaceType', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'isLeftHanded': {'name': 'isLeftHanded', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'yIsUp': {'name': 'yIsUp', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftAttributeLookup':{
+                'info:id': {'name': 'redshift::VertexAttributeLookup'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'outScalar': {'name': 'outScalar', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'attributeName': {'name': 'attributeName', 'type': Sdf.ValueTypeNames.String, 'convert': Same},
+                'defaultColor': {'name': 'defaultColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'defaultScalar': {'name': 'defaultScalar', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftRaySwitch':{
+                'info:id': {'name': 'redshift::RaySwitch'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'cameraSwitchFrontBack': {'name': 'cameraSwitchFrontBack', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'cameraColor': {'name': 'cameraColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'cameraColorBack': {'name': 'cameraColorBack', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'reflectionSwitch': {'name': 'reflectionSwitch', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'reflectionSwitchFrontBack': {'name': 'reflectionSwitchFrontBack', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'reflectionColor': {'name': 'reflectionColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'reflectionColorBack': {'name': 'reflectionColorBack', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'refractionSwitch': {'name': 'refractionSwitch', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refractionSwitchFrontBack': {'name': 'refractionSwitchFrontBack', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'refractionColor': {'name': 'refractionColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'refractionColorBack': {'name': 'refractionColorBack', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'giSwitch': {'name': 'giSwitch', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'giSwitchFrontBack': {'name': 'giSwitchFrontBack', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'giColor': {'name': 'giColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'giColorBack': {'name': 'giColorBack', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftHairRandomColor':{
+                'info:id': {'name': 'redshift::HairRandomColor'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'color': {'name': 'color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'hueAmount': {'name': 'hueAmount', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'satAmount': {'name': 'satAmount', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'valAmount': {'name': 'valAmount', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftState':{
+                'info:id': {'name': 'redshift::State'},
+                'outNormal': {'name': 'outNormal', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'outBumpNormal': {'name': 'outBumpNormal', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'outTriNormal': {'name': 'outTriNormal', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'outTangent': {'name': 'outTangent', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'outBitangent': {'name': 'outBitangent', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'outRayOrigin': {'name': 'outRayOrigin', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'outRayDirection': {'name': 'outRayDirection', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'outRayPosition': {'name': 'outRayPosition', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
+                'outRayLength': {'name': 'outRayLength', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'trans_space': {'name': 'trans_space', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'showRayFacingNormals': {'name': 'showRayFacingNormals', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
+            'RedshiftColorLayer':{
+                'info:id': {'name': 'redshift::ColorLayer'},
+                'outColor': {'name': 'outColor', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'outAlpha': {'name': 'outAlpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'advanced_mode': {'name': 'advanced_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'base_color': {'name': 'base_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'base_alpha': {'name': 'base_alpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'base_color_premult': {'name': 'base_color_premult', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer1_enable': {'name': 'layer1_enable', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer1_color': {'name': 'layer1_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layer1_alpha': {'name': 'layer1_alpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer1_mask': {'name': 'layer1_mask', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer1_blend_mode': {'name': 'layer1_blend_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer1_overlay_mode': {'name': 'layer1_overlay_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer1_color_premult': {'name': 'layer1_color_premult', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer2_enable': {'name': 'layer2_enable', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer2_color': {'name': 'layer2_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layer2_alpha': {'name': 'layer2_alpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer2_mask': {'name': 'layer2_mask', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer2_blend_mode': {'name': 'layer2_blend_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer2_overlay_mode': {'name': 'layer2_overlay_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer2_color_premult': {'name': 'layer2_color_premult', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer3_enable': {'name': 'layer3_enable', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer3_color': {'name': 'layer3_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layer3_alpha': {'name': 'layer3_alpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer3_mask': {'name': 'layer3_mask', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer3_blend_mode': {'name': 'layer3_blend_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer3_overlay_mode': {'name': 'layer3_overlay_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer3_color_premult': {'name': 'layer3_color_premult', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer4_enable': {'name': 'layer4_enable', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer4_color': {'name': 'layer4_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layer4_alpha': {'name': 'layer4_alpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer4_mask': {'name': 'layer4_mask', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer4_blend_mode': {'name': 'layer4_blend_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer4_overlay_mode': {'name': 'layer4_overlay_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer4_color_premult': {'name': 'layer4_color_premult', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer5_enable': {'name': 'layer5_enable', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer5_color': {'name': 'layer5_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layer5_alpha': {'name': 'layer5_alpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer5_mask': {'name': 'layer5_mask', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer5_blend_mode': {'name': 'layer5_blend_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer5_overlay_mode': {'name': 'layer5_overlay_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer5_color_premult': {'name': 'layer5_color_premult', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer6_enable': {'name': 'layer6_enable', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer6_color': {'name': 'layer6_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layer6_alpha': {'name': 'layer6_alpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer6_mask': {'name': 'layer6_mask', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer6_blend_mode': {'name': 'layer6_blend_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer6_overlay_mode': {'name': 'layer6_overlay_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer6_color_premult': {'name': 'layer6_color_premult', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer7_enable': {'name': 'layer7_enable', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                'layer7_color': {'name': 'layer7_color', 'type': Sdf.ValueTypeNames.Color3f, 'convert': MayaArrayToVector},
+                'layer7_alpha': {'name': 'layer7_alpha', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer7_mask': {'name': 'layer7_mask', 'type': Sdf.ValueTypeNames.Float, 'convert': Same},
+                'layer7_blend_mode': {'name': 'layer7_blend_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer7_overlay_mode': {'name': 'layer7_overlay_mode', 'type': Sdf.ValueTypeNames.Int, 'convert': IntToString},
+                'layer7_color_premult': {'name': 'layer7_color_premult', 'type': Sdf.ValueTypeNames.Int, 'convert': Same},
+                
+                'post_proc': self.post_Nothing
+            },
             'RedshiftBumpMap':{
                 'info:id': {'name': 'redshift::BumpMap'},
                 'out': {'name': 'out', 'type': Sdf.ValueTypeNames.Float3, 'convert': MayaArrayToVector},
@@ -757,8 +954,6 @@ class RedshiftToUSD:
         self.scope = scope
         self.filename = filename
         self.Run()
-        
-
 
     def Run(self):
 
@@ -784,7 +979,6 @@ class RedshiftToUSD:
                 displacementShader = displacementShaders[0]
                 usdShaderCollector.CreateInput('Displacement', Sdf.ValueTypeNames.Float3)
                 self.rebuildShader(source_shader = displacementShader, usd_target = usdShaderCollector, source_attr = 'out', target_attr = 'Displacement', usdShadingGroup = usdShadingGroup)
-
 
     def rebuildShader(self, source_shader, usd_target, source_attr, target_attr ,usdShadingGroup):
 
