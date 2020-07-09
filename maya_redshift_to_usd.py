@@ -31,7 +31,7 @@ def MayaArrayToInt(arg):
 def post_Nothong():
     return
 
-class RedshiftToUSD:
+class RedshiftShadersToUSD:
 
     def __init__(self, shadingGroups = None, scope = 'Looks', filename = None):
 
@@ -954,9 +954,9 @@ class RedshiftToUSD:
         self.shadingGroups = shadingGroups
         self.scope = scope
         self.filename = filename
-        self.Run()
+        self.ExportMaterials()
 
-    def Run(self):
+    def ExportMaterials(self):
 
         # Build Stage
         self.stage = Usd.Stage.CreateNew(self.filename)
@@ -982,6 +982,8 @@ class RedshiftToUSD:
                 usdShaderCollector.CreateInput('Displacement', Sdf.ValueTypeNames.Float3)
                 source_attr = cmds.listConnections(shadingGroup + '.displacementShader', p = True)[0].split('.')[-1]
                 self.rebuildShader(source_shader = displacementShader, usd_target = usdShaderCollector, source_attr = source_attr, target_attr = 'Displacement', usdShadingGroup = usdShadingGroup)
+
+        self.Save()
 
     def rebuildShader(self, source_shader, usd_target, source_attr, target_attr ,usdShadingGroup):
 
@@ -1024,8 +1026,7 @@ class RedshiftToUSD:
                     connectDestAttr = connectDest.split('.')[-1]
                     if connectDestAttr in attr_table.keys():
                         self.rebuildShader(source_shader = connectSourceNode, usd_target = usdShader, source_attr = connectSourceAttr, target_attr = attr_table[connectDestAttr]['name'], usdShadingGroup = usdShadingGroup)
-            
-
+        
         else:
             return
 
@@ -1088,12 +1089,10 @@ def getShadingGroups(root):
 
 if __name__ == '__main__':
 
-    filename = cmds.fileDialog2(fm = 0, startingDirectory = 'D:/', fileFilter = "USD (*.usd *.usda *)")[0]
+    filenames = cmds.fileDialog2(fm = 0, startingDirectory = 'D:/', fileFilter = "USD (*.usd *.usda)")
 
-    if filename:
-
+    if filenames:
+        filename = filenames[0]
         shadingGroups = getShadingGroups(cmds.ls(sl = True)[0])
-
-        tmp = RedshiftToUSD(shadingGroups = shadingGroups, filename = filename)
-        tmp.Save()
+        tmp = RedshiftShadersToUSD(shadingGroups = shadingGroups, filename = filename)
         del tmp
