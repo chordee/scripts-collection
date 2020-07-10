@@ -28,9 +28,6 @@ def MayaArrayToFloat(arg):
 def MayaArrayToInt(arg):
     return int(arg[0][0])
 
-def post_Nothong():
-    return
-
 class RedshiftShadersToUSD:
 
     def __init__(self, shadingGroups = None, scope = 'Looks', filename = None):
@@ -959,7 +956,7 @@ class RedshiftShadersToUSD:
     def ExportMaterials(self):
 
         # Build Stage
-        self.stage = Usd.Stage.CreateNew(self.filename)
+        self.stage = Usd.Stage.CreateInMemory()
         root = UsdGeom.Scope.Define(self.stage, '/' + self.scope)
 
         for shadingGroup in self.shadingGroups:
@@ -1069,8 +1066,7 @@ class RedshiftShadersToUSD:
     # Save Stage to File
 
     def Save(self):
-        self.stage.Save()
-
+        self.stage.Export(self.filename)
 
 def getShadingGroups(root):
     children_meshs = cmds.listRelatives(root, ad = True, typ = 'surfaceShape', f = True)
