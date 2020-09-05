@@ -2,15 +2,17 @@ import maya.cmds as cmds
 import maya.api.OpenMaya as om
 from pxr import Usd, UsdShade, UsdGeom, Sdf
 
-filename = "D:/tmp/arnold.usda"
+filename = "C:/tmp/arnold.usda"
 
 
 class MtoaShadersToUSD:
 
     def __init__(self, filename, root):
+        self.shaderMap = {}
         self.filename = filename
         self.root = root
         self.shadingGroups = getShadingGroups(root)
+        self.shaderMapMaker(self.shadingGroups)
 
     def exportUSD(self, scope="/materials"):
         self.scope = scope
@@ -23,13 +25,14 @@ class MtoaShadersToUSD:
         stage = Usd.Stage.Open(self.filename)
         edit = Sdf.BatchNamespaceEdit()
 
-        UsdGeom.Scope.Define(stage, self.scope)
-        UsdShade.Material.Define(stage, self.scope + "/test")
+        scope_prim = UsdGeom.Scope.Define(stage, self.scope)
 
         for prim in stage.Traverse():
-            if prim.GetTypeName() == "Shader":
+            if prim.GetTypeName() == "Shader" and prim.GetName() in self.shaderMap.keys():
                 path = prim.GetPath()
-                edit.Add(path, '/materials/test' + str(path))
+                material = UsdShade.Material.Define(
+                    stage, scope_prim.GetPath().AppendPath(self.shaderMap[prim.GetName()]))
+                edit.Add(path, material.GetPath().AppendPath(prim.GetName()))
                 shader = UsdShade.Shader.Define(stage, prim.GetPath())
                 for i in shader.GetInputs():
                     if i.HasConnectedSource() is True:
@@ -41,6 +44,8 @@ class MtoaShadersToUSD:
         for i in edit.edits:
             edit_dict[i.currentPath] = i.newPath
 
+        print(edit_dict)
+
         for prim in stage.Traverse():
             if prim.GetTypeName() == "Shader":
                 shader = UsdShade.Shader.Define(stage, prim.GetPath())
@@ -48,12 +53,28 @@ class MtoaShadersToUSD:
                     attr = i.GetAttr()
                     if len(attr.GetConnections()) > 0:
                         con = attr.GetConnections()[0]
-                        print con.GetPrimPath() in edit_dict.keys()
                         k = con.ReplacePrefix(
                             con.GetPrimPath(), edit_dict[con.GetPrimPath()])
                         i.ConnectToSource(k)
 
         print(stage.ExportToString())
+        stage.Save()
+
+    def shaderMapMaker(self, shadingGroups):
+        self.shaderMap = {}
+        for shadingGroup in shadingGroups:
+            self.getConnectionNodes(shadingGroup, shadingGroup)
+        print self.shaderMap
+
+    def getConnectionNodes(self, node, shadingGroup):
+        res = cmds.listConnections(node, d=False, c=False, p=False)
+        if res:
+            for shader in res:
+                self.shaderMap[str(shader)] = str(shadingGroup)
+                self.getConnectionNodes(shader, shadingGroup)
+
+    def getShaderMap(self):
+        return self.shaderMap
 
 
 def getShadingGroups(root):
