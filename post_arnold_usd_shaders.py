@@ -17,7 +17,7 @@ class MtoaShadersToUSD:
         # self.shaderMapMaker(self.shadingGroups)
         self.scope = scope
         # cmds.select(self.root, r=1)
-        cmds.arnoldExportAss(self.root, f=self.filename, s=1, shadowLinks=0, mask=16,
+        cmds.arnoldExportAss(self.root, f=self.filename, s=1, shadowLinks=0, shg=1, m=16,
                              lightLinks=0, forceTranslateShadingEngines=1, boundingBox=1, fullPath=1)
         self.post_process()
 
@@ -69,9 +69,9 @@ class MtoaShadersToUSD:
                     shader.CreateOutput(
                         connection_attrs_map[connection_attr], Sdf.ValueTypeNames.Token)
                     material.CreateOutput(
-                        "arnold:" + connection_attrs_map[connection_attr], Sdf.ValueTypeNames.Token).ConnectToSource(shader, connection_attrs_map[connection_attr])
+                        "arnold:" + connection_attrs_map[connection_attr], Sdf.ValueTypeNames.Token).ConnectToSource(str(shader.GetPath()) + ".outputs:" + connection_attrs_map[connection_attr])
 
-        stage.Save()
+        stage.Export(self.filename)
 
     """
     def post_process_old(self):
