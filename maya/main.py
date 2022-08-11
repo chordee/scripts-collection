@@ -47,6 +47,9 @@ class MainWidget(QtWidgets.QWidget):
 
 if __name__ == '__main__':
     mayaMainWindowPtr = omui.MQtUtil.mainWindow()
-    mayaMainWindow = wrapInstance(long(mayaMainWindowPtr), QtWidgets.QWidget)
+    try:
+        mayaMainWindow = wrapInstance(long(mayaMainWindowPtr), QtWidgets.QWidget)
+    except NameError:
+        mayaMainWindow = wrapInstance(int(mayaMainWindowPtr), QtWidgets.QWidget)
     main_window = MainWin(parent=mayaMainWindow)
     main_window.show()

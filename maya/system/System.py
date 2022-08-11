@@ -17,14 +17,43 @@ class System_Tab(QtWidgets.QWidget):
         # buttons_layout
         self.change_script_editor_font_style_btn = QtWidgets.QPushButton(
             'Change Script Editor Font Style')
+        self.parent_shape_btn = QtWidgets.QPushButton('Parent Shape')
+        self.import_all_refs_btn = QtWidgets.QPushButton('Import All References')
+        self.remove_all_namespace_btn = QtWidgets.QPushButton("Remove All Namespaces")
+
         self.buttons_layout.addWidget(self.change_script_editor_font_style_btn)
+        self.buttons_layout.addWidget(self.parent_shape_btn)
+        self.buttons_layout.addWidget(self.import_all_refs_btn)
+        self.buttons_layout.addWidget(self.remove_all_namespace_btn)
+
         self.change_script_editor_font_style_btn.clicked.connect(
             self.change_script_editor_font_style)
+        self.parent_shape_btn.clicked.connect(self.parent_shape)
+        self.import_all_refs_btn.clicked.connect(self.import_all_refs)
+        self.remove_all_namespace_btn.clicked.connect(self.remove_all_namespaces)
+
         self.layout.setAlignment(QtCore.Qt.AlignTop)
         self.layout.addStretch()
 
     def change_script_editor_font_style(self):
         self.fontsytle_dialog.show()
+
+    def parent_shape(self):
+        sels = cmds.ls(sl=1, l=1)
+        shape = cmds.listRelatives(sels[0], s=True)[0]
+        cmds.parent(shape, sels[1], r=True, s=True)
+
+    def import_all_refs(self):
+        while len(cmds.file(q=1, r=1)) > 0:
+            for f in cmds.file(q=1, r=1):
+                cmds.file(f, importReference =True)
+
+    def remove_all_namespaces(self):
+        namespaces = cmds.namespaceInfo(listOnlyNamespaces=True, recurse=True)
+        for ns in namespaces:
+            if ns != 'shared' and ns != 'UI':
+                cmds.namespace(set=':')
+                cmds.namespace(rm=ns, mnr=1)
 
 
 class FontStyle_Dialog(QtWidgets.QDialog):
@@ -116,6 +145,7 @@ class FontStyle_Dialog(QtWidgets.QDialog):
             win.setProperty('maya_ui', 'scriptEditor')
             app.setStyleSheet(style)
         self.close_dialog()
+
 
     def close_dialog(self):
         self.close()
