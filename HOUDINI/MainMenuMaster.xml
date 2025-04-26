@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- Please note, that the files defining the main menu (ie, MainMenuCommon,
+     MainMenuMaster, and MainMenuEscape)
+     can exist in $HOME/houdiniX.Y/ directory and will supplement 
+     the original definitions found in $HFS/houdini/ -->
+
+<!-- Please see ExampleMenu.xml for examples that customise the main menu. -->
+<!-- Please see menu.xsd for the menu validation schema. -->
+<mainMenu>
+
+	<menuBar>
+		<subMenu id = "moonshine_menu">
+			<label>MoonShine</label>
+
+			<scriptItem id = "m_linkBound">
+			<label>Link Bound</label>
+			<scriptPath>Q:\Resource\houdini\eli_linkBound.py</scriptPath>
+			</scriptItem>
+
+			<scriptItem id = "m_linkParm">
+			<label>Link Parm</label>
+			<scriptPath>Q:\Resource\houdini\eli_linkParm.py</scriptPath>
+			</scriptItem>
+
+			<scriptItem id = "m_vexFunc">
+			<label>Add Vex Function</label>
+			<scriptPath>Q:\Resource\houdini\eli_vexFunc.py</scriptPath>
+			</scriptItem>
+
+			<scriptItem id = "m_addRender">
+			<label>Create Rop From Cache</label>
+			<scriptPath>Q:\Resource\houdini\eli_addRender.py</scriptPath>
+			</scriptItem>
+
+			<scriptItem id = "m_addSep">
+			<label>Add Seperate EXR From Rop</label>
+			<scriptPath>Q:\Resource\houdini\eli_addSep.py</scriptPath>
+			</scriptItem>
+
+			<separatorItem/>
+
+			<scriptItem id = "m_exportInfo">
+			<label>Export Transform Info</label>
+			<scriptPath>Q:\Resource\houdini\eli_exportInfo.py</scriptPath>
+			</scriptItem>
+
+			<scriptItem id = "m_matInfo">
+			<label>Export Material Info</label>
+			<scriptPath>Q:\Resource\houdini\eli_matInfo.py</scriptPath>
+			</scriptItem>
+
+			<separatorItem/>
+
+			<scriptItem id = "m_redshiftMat">
+			<label>Auto-create Redshift Material</label>
+			<scriptPath>‪Q:\Resource\houdini\auto_redshift_material\houdini_auto_redshift_material.py</scriptPath>
+			</scriptItem>
+
+			<separatorItem/>
+
+			<scriptItem id = "fit_deadline_scheduler">
+			<label>Auto-Fit Deadline Scheduler TOP</label>
+			<scriptPath>‪Q:\Resource\houdini\fit_deadline_scheduler.py</scriptPath>
+			</scriptItem>
+
+			<separatorItem/>
+
+			<scriptItem id = "m_help">
+			<label>Help</label>
+			<scriptPath>Q:\Resource\houdini\eli_doucumentation.py</scriptPath>
+			</scriptItem>
+
+	    </subMenu>
+	</menuBar>
+
+</mainMenu>

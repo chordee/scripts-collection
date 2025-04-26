@@ -1,0 +1,39 @@
+[Executable]
+Type=string
+Label=Executable
+Category=PDG Deadline Options
+CategoryOrder=0
+Index=0
+Description=The command executable to run
+Required=false
+DisableIfBlank=true
+
+[Arguments]
+Type=string
+Label=Arguments
+Category=PDG Deadline Options
+CategoryOrder=0
+Index=1
+Description=The command arguments to use
+Required=false
+DisableIfBlank=true
+
+[StartupDirectory]
+Type=string
+Label=Startup Directory
+Category=PDG Deadline Options
+CategoryOrder=0
+Index=2
+Description=The directory to start the command line in (leave blank to use default)
+Required=false
+DisableIfBlank=true
+
+[PDGJobDirectory]
+Type=string
+Label=PDG Job Directory
+Category=PDG Deadline Options
+CategoryOrder=0
+Index=3
+Description=The directory containing the job and task files
+Required=true
+DisableIfBlank=true
