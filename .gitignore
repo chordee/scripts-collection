@@ -6,4 +6,3 @@ build/
 .vscode
 .mapy_cache/
 __pycache__/
-panel_demo.py
