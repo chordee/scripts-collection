@@ -6,3 +6,7 @@ build/
 .vscode
 .mapy_cache/
 __pycache__/
+*.pyc
+**/*.pyc
+backup/
+**/backup/
