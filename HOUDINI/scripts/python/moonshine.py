@@ -10,7 +10,9 @@ except ImportError:
 from typing import Optional, Union, Type
 
 
-def matrixManipulate(matrix: Union[hou.Matrix4, hou.Matrix3], data: np.ndarray) -> Optional[np.ndarray]:
+def matrixManipulate(
+    matrix: Union[hou.Matrix4, hou.Matrix3], data: np.ndarray
+) -> Optional[np.ndarray]:
     """
     matrixManipulate Use matrix manipulate numpy vecter array
 
@@ -33,7 +35,7 @@ def matrixManipulate(matrix: Union[hou.Matrix4, hou.Matrix3], data: np.ndarray) 
     return res
 
 
-def numpyArrayFromGeoPoints(geo: hou.Geometry, attr: str = 'P') -> Optional[np.ndarray]:
+def numpyArrayFromGeoPoints(geo: hou.Geometry, attr: str = "P") -> Optional[np.ndarray]:
     """
     numpyArrayFromGeoPoints Convert geometry point attribute to numpy array
 
@@ -48,16 +50,45 @@ def numpyArrayFromGeoPoints(geo: hou.Geometry, attr: str = 'P') -> Optional[np.n
     point_attr = geo.findPointAttrib(attr)
     if not point_attr:
         return None
-    if point_attr.dataType() != hou.attribData.Int and point_attr.dataType() != hou.attribData.Float:
+    if (
+        point_attr.dataType() != hou.attribData.Int
+        and point_attr.dataType() != hou.attribData.Float
+    ):
         return None
     size = point_attr.size()
     if point_attr.dataType == hou.attribData.Int:
-        data = np.frombuffer(geo.pointFloatAttribValuesAsString(attr), dtype=np.int32).reshape(-1, size)
+        data = np.frombuffer(
+            geo.pointFloatAttribValuesAsString(attr), dtype=np.int32
+        ).reshape(-1, size)
     else:
-        data = np.frombuffer(geo.pointFloatAttribValuesAsString(attr), dtype=np.float32).reshape(-1, size)
+        data = np.frombuffer(
+            geo.pointFloatAttribValuesAsString(attr), dtype=np.float32
+        ).reshape(-1, size)
     return data
 
-def convolve2D(image: np.ndarray, kernel: np.ndarray, padding: int = 0, strides:int = 1, preExpand: bool = False, pad_mode:str = 'edge') -> np.ndarray:
+
+def convolve2D(
+    image: np.ndarray,
+    kernel: np.ndarray,
+    padding: int = 0,
+    strides: int = 1,
+    preExpand: bool = False,
+    pad_mode: str = "edge",
+) -> np.ndarray:
+    """
+    convolve2D Perform a 2D convolution operation on an image using a given kernel.
+
+    Args:
+        image (np.ndarray): Input 2D array (image) to be convolved.
+        kernel (np.ndarray): 2D convolution kernel.
+        padding (int, optional): Number of zero-padding layers to add to the image. Defaults to 0.
+        strides (int, optional): Stride step for the convolution. Defaults to 1.
+        preExpand (bool, optional): If True, pre-expands the image with padding of 1 using pad_mode. Defaults to False.
+        pad_mode (str, optional): Padding mode for np.pad if preExpand is True. Defaults to "edge".
+
+    Returns:
+        np.ndarray: The result of the convolution as a 2D array.
+    """
     if preExpand:
         image = np.pad(image, 1, pad_mode)
 
@@ -74,8 +105,12 @@ def convolve2D(image: np.ndarray, kernel: np.ndarray, padding: int = 0, strides:
 
     # Apply Equal Padding to All Sides
     if padding != 0:
-        imagePadded = np.zeros((image.shape[0] + padding*2, image.shape[1] + padding*2))
-        imagePadded[int(padding):int(-1 * padding), int(padding):int(-1 * padding)] = image
+        imagePadded = np.zeros(
+            (image.shape[0] + padding * 2, image.shape[1] + padding * 2)
+        )
+        imagePadded[
+            int(padding) : int(-1 * padding), int(padding) : int(-1 * padding)
+        ] = image
         print(imagePadded)
     else:
         imagePadded = image
@@ -94,13 +129,34 @@ def convolve2D(image: np.ndarray, kernel: np.ndarray, padding: int = 0, strides:
                 try:
                     # Only Convolve if x has moved by the specified Strides
                     if x % strides == 0:
-                        output[x, y] = (kernel * imagePadded[x: x + xKernShape, y: y + yKernShape]).sum()
+                        output[x, y] = (
+                            kernel * imagePadded[x : x + xKernShape, y : y + yKernShape]
+                        ).sum()
                 except:
                     break
 
     return output
 
-if importlib.util.find_spec('scipy') is not None:
-    def scipy_convolve2d(image: np.ndarray, kernel: np.ndarray, mode: str = 'same', boundary: str = 'symm') -> np.ndarray:
-        output = sp.signal.convolve2d(image, kernel, mode = mode, boundary = boundary)
+
+if importlib.util.find_spec("scipy") is not None:
+
+    def scipy_convolve2d(
+        image: np.ndarray,
+        kernel: np.ndarray,
+        mode: str = "same",
+        boundary: str = "symm",
+    ) -> np.ndarray:
+        """
+        scipy_convolve2d Perform a 2D convolution using scipy's convolve2d.
+
+        Args:
+            image (np.ndarray): Input 2D array (image) to be convolved.
+            kernel (np.ndarray): 2D convolution kernel.
+            mode (str, optional): Indicates the size of the output. Defaults to "same".
+            boundary (str, optional): Indicates how to handle boundaries. Defaults to "symm".
+
+        Returns:
+            np.ndarray: The result of the convolution as a 2D array.
+        """
+        output = sp.signal.convolve2d(image, kernel, mode=mode, boundary=boundary)
         return output
