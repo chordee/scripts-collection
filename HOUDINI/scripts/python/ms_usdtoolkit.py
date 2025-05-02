@@ -42,6 +42,15 @@ def primtiveXform(prim: Usd.Prim, frame: int) -> Optional[hou.Matrix4]:
     return h_xform
 
 def get_material_from_prim(prim: Usd.Prim) -> Optional[UsdShade.Material]:
+    """
+    get_material_from_prim Returns the directly bound UsdShade.Material for a given USD primitive, if any.
+
+    Args:
+        prim (Usd.Prim): The USD primitive to query.
+
+    Returns:
+        Optional[UsdShade.Material]: The directly bound material, or None if not found.
+    """
     materialBinding_api = UsdShade.MaterialBindingAPI(prim)
     direct_binding = materialBinding_api.GetDirectBinding()
     material = direct_binding.GetMaterial()
