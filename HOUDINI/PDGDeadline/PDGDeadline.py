@@ -262,22 +262,41 @@ class PDGDeadlinePlugin(DeadlinePlugin):
 
                 try:
                     for key, var in pdg_item_env.items():
-                        ## Force check linux path via Deadline - Chordee
-                        if var and sys.platform.startswith('linux'):
-                            if 'http' not in str(var) and str(key) != 'PDG_PATHMAP':
-                                var = RepositoryUtils.CheckPathMapping(str(var))
-                        ##
-                        if key == 'HOUDINI_PATH':
-                            # Instead of stomping HOUDINI_PATH we prepend it
-                            var_local = os.environ.get(key, '')
-                            if var_local:
-                                var = var.replace(';&', '')
-                                var = var + path_combine + var_local
-                        # null json value mean unsetenv
-                        if var is None:
-                            self.SetProcessEnvironmentVariable(str(key), None)
-                        else:
-                            self.SetProcessEnvironmentVariable(str(key), str(var))
+                        if key.startswith('AVALON') or key.startswith('PDG_') or str(key) == 'PYTHONPATH': 
+                            # only AVALON and PDG env vars are set to the task - Chordee
+                            
+                            ## Force check linux path via Deadline - Chordee
+                            if var and sys.platform.startswith('linux'):
+                                if 'http' not in str(var) and str(key) != 'PDG_PATHMAP':
+                                    if str(key) == 'PYTHONPATH':
+                                        # Remove any python module cause conflicts with HTOA
+                                        vars = [v for v in str(var).split(';') if not v.endswith('lib/python_modules/python3')]
+                                        var = ';'.join(vars)
+                                        var = RepositoryUtils.CheckPathMapping(str(var))
+                                    elif str(key) == 'AVALON_DEADLINE_AUTH':
+                                        # Avoid path mapping with AVALON_DEADLINE_AUTH
+                                        # since it is a string and not a path
+                                        var = var
+                                    else:
+                                        var = RepositoryUtils.CheckPathMapping(str(var))
+                            ##
+                            if key == 'HOUDINI_PATH':
+                                # Instead of stomping HOUDINI_PATH we prepend it
+                                var_local = os.environ.get(key, '')
+                                if var_local:
+                                    var = var.replace(';&', '')
+                                    var = var + path_combine + var_local
+                                if 'HTOA' in pdg_item_env:
+                                    # HTOA is a special case since it is not a path - Chordee
+                                    if platform == 'windows':
+                                        var = str(pdg_item_env['HTOA']) + ";" + var
+                                    elif platform == 'linux':
+                                        var =  RepositoryUtils.CheckPathMapping(str(pdg_item_env['HTOA'])).replace('platform-windows','platform-linux') + ":" + var
+                            # null json value mean unsetenv
+                            if var is None:
+                                self.SetProcessEnvironmentVariable(str(key), None)
+                            else:
+                                self.SetProcessEnvironmentVariable(str(key), str(var) if platform == 'windows' else str(var).replace('platform-windows', 'platform-linux').replace('\\', '/').replace(';',':'))
 
                     if 'PATH' in pdg_item_env:
                         work_item_path = pdg_item_env['PATH'].replace('__PDG_PATHSEP__', path_combine)
