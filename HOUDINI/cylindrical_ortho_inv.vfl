@@ -1,0 +1,29 @@
+#pragma opname      cylindrical_ortho
+#pragma oplabel     "Cylindrical Ortho"
+#pragma hint  fov_h      label="Horizontal FOV (rad)"
+#pragma hint  height     label="Vertical Height"
+#pragma hint  radius     label="Cylinder Radius"
+
+cvex cylindrical_ortho(
+    // ── inputs ──────────────────────────
+    float  x        = 0;
+    float  y        = 0;
+    float  Time     = 0;
+    int    SID      = 0;
+    float  fov_h    = 2.0 * M_PI;   // horizontal spread angle, default 360 deg
+    float  height   = 2.0;           // vertical visible height (world space)
+    float  radius   = 5.0;           // cylinder radius, distance from origin
+
+    // ── exports ─────────────────────────
+    export vector P  = 0;
+    export vector I  = 0;
+)
+{
+    float u = x - 0.5;
+    float v = y - 0.5;
+
+    float theta = u * fov_h;
+
+    P = set(sin(theta) * radius, v * height, cos(theta) * radius);
+    I = normalize(-set(sin(theta), 0.0, cos(theta)));
+}
