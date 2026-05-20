@@ -52,7 +52,7 @@ class ProjectRootVariable(base.OutputProcessor):
     def beginSave(self, config_node, config_overrides, lop_node, t, stage_variables):
         super().beginSave(config_node, config_overrides, lop_node, t, stage_variables)
 
-        raw = self.evalConfig(PARAM_NAME, config_node, config_overrides, t, '') or ''
+        raw = self.evalConfig(PARAM_NAME, config_node, config_overrides, t) or ''
         expanded = hou.text.expandString(raw).strip() if raw else ''
 
         if not expanded:

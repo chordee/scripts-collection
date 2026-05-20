@@ -62,7 +62,7 @@ Class 需繼承 `husd.outputprocessor.OutputProcessor`，並覆寫以下方法�
 | `processReferenceExpression(asset_path, referencing_layer_path, asset_is_layer)` | 處理含有變數運算式的 reference 路徑 |
 | `processLayer(layer)` | 在 layer 寫檔前直接修改 `pxr.Sdf.Layer`，回傳是否有修改 |
 
-`evalConfig(parameter_name, config_node, config_overrides, t, default_value=None)` 是基底類別提供的工具，會優先讀 `config_overrides`，否則 fallback 到節點參數。
+`evalConfig(parameter_name, config_node, config_overrides, t)` 是基底類別提供的工具，會優先讀 `config_overrides`，否則 fallback 到節點參數；參數不存在時回傳 `None`，呼叫端自行 `or default`。
 
 ### 注意事項
 
