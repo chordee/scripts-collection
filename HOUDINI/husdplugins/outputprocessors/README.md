@@ -2,7 +2,9 @@
 
 本目錄存放自訂的 Houdini Solaris USD Output Processor。
 
-官方文件參考：<https://www.sidefx.com/docs/houdini/solaris/output.html#processors>
+官方文件參考：
+- Houdini Solaris Output Processors：<https://www.sidefx.com/docs/houdini/solaris/output.html#processors>
+- USD Variable Expressions：<https://openusd.org/dev/user_guides/variable_expressions.html>（供 `projectrootvariable.py` 用到的 `` `"${VAR}/..."` `` 語法與 `Sdf.Layer.expressionVariables` 規格參考）
 
 ## 什麼是 Output Processor
 
