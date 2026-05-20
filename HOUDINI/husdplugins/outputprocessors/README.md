@@ -90,3 +90,30 @@ Class 需繼承 `husd.outputprocessor.OutputProcessor`，並覆寫以下方法�
 
 - Reference 路徑改寫不檢查 `asset_is_layer`；如果你引用了輸出目錄底下的貼圖/VDB，路徑也會被轉成相對。實務上這通常正是想要的結果，但若不是請自行加入過濾。
 - 路徑比對採大小寫不敏感（針對 Windows）；若你在 Linux 上跑且依賴大小寫區分目錄，請改寫該段邏輯。
+
+### `projectrootvariable.py` — Project Root Variable
+
+將輸出 USD 中符合「專案根目錄」前綴的絕對 asset path 改寫成 USD variable expression，並在輸出 layer 的 `expressionVariables` metadata 寫入對應變數，方便日後跨機器/平台搬移與重新解析。
+
+#### 參數
+
+- **Project Root**（字串）：可輸入絕對路徑或含 Houdini 變數（`$JOB`、`$HIP`…），會以 `hou.text.expandString` 展開後再做比對。空字串時整個 processor 無動作。
+
+#### 行為
+
+1. 在每個輸出 layer 的 `expressionVariables` 寫入 `PROJECT_ROOT = <展開後的絕對路徑>`。
+2. 對 `processReferencePath` 收到的 asset path：若是絕對路徑且前綴符合 `PROJECT_ROOT`，改寫為 `` `"${PROJECT_ROOT}/<rel>"` ``（references / payloads / sublayers，以及 asset-valued attributes 如 shader texture 都涵蓋）。
+3. 不符合前綴、或 path 中已含 backtick / `${` 的 expression，原樣保留。
+4. 不覆寫 `processSavePath`，不影響實際存檔位置。
+
+#### 使用方式
+
+在 USD ROP 的 **Output Processors** 中加一筆，下拉選 `Project Root Variable`，在參數區填入專案根目錄。
+
+#### 限制
+
+- 變數名固定為 `PROJECT_ROOT`，目前不支援多個變數或自訂變數名。
+- **只改寫本身就是絕對路徑的 asset path**；相對路徑與已含 expression（backtick 或 `${`）的 path 一律 pass-through，不嘗試解析。
+- 路徑前綴比對的大小寫策略依平台：Windows 採大小寫不敏感（`.lower()` 比對），Linux/macOS 嚴格比對。判定依 `sys.platform`。
+- 與 `avalonpublish` 並用時注意串接順序：後執行的 processor 拿到的是前一個處理過的結果，可能影響預期。
+- 依賴 `Sdf.Layer.expressionVariables` API（USD 23.11 之後）；若 Houdini 內含的 USD 過舊，`processLayer` 會靜默跳過 metadata 寫入（path 改寫仍會發生，但下游無法解析）。
