@@ -81,11 +81,12 @@ def convolve2d(
     y_out = (y_img - y_kern) // strides + 1
     out_dtype = np.result_type(image.dtype, kernel.dtype, np.float64)
     output = np.zeros((x_out, y_out), dtype=out_dtype)
+    flipped_kernel = np.flip(kernel, axis=(0, 1))
 
     for y in range(0, y_img - y_kern + 1, strides):
         for x in range(0, x_img - x_kern + 1, strides):
             output[x // strides, y // strides] = (
-                kernel * image_padded[x : x + x_kern, y : y + y_kern]
+                flipped_kernel * image_padded[x : x + x_kern, y : y + y_kern]
             ).sum()
     return output
 
@@ -275,18 +276,20 @@ def get_all_layers_in_layer(
     if main_layer is None:
         return []
 
+    root_key = main_layer.realPath or main_layer.identifier
     found: List[str] = []
-    visited = {main_layer.identifier}
+    visited = {root_key}
 
     def walk(layer: Sdf.Layer) -> None:
         deps = layer.GetCompositionAssetDependencies()
         for dep in deps:
             abs_path = layer.ComputeAbsolutePath(dep)
-            if abs_path in visited:
-                continue
-            visited.add(abs_path)
-            found.append(abs_path)
             sub = Sdf.Layer.FindOrOpen(abs_path)
+            dep_key = sub.realPath if (sub is not None and sub.realPath) else abs_path
+            if dep_key in visited:
+                continue
+            visited.add(dep_key)
+            found.append(dep_key)
             if sub is not None:
                 walk(sub)
 
