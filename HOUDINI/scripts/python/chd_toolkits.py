@@ -122,7 +122,8 @@ def compute_prim_scale(
     factored = mat.Factor()
     if not factored[0]:
         return None
-    _, rotation, scale_vec, _, _ = factored
+    rotation = factored[1]
+    scale_vec = factored[2]
     scale = [scale_vec[0], scale_vec[1], scale_vec[2]]
     if rotation.GetDeterminant() < 0:
         scale[0] = -scale[0]
