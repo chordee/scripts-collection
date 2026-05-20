@@ -46,7 +46,7 @@ import chd_toolkits as ct
 
 | 函式 | 用途 |
 |---|---|
-| `convolve2d(image, kernel, padding=0, strides=1, pad_mode=None)` | 純 numpy 實作的 2D cross-correlation。簡單但慢，用於驗證或教學。 |
+| `convolve2d(image, kernel, padding=0, strides=1, pad_mode=None)` | 純 numpy 實作的 2D 卷積（會 flip kernel，行為與 `scipy_convolve2d` 一致）。簡單但慢，用於驗證或教學。 |
 | `scipy_convolve2d(image, kernel, mode='same', boundary='symm')` | `scipy.signal.convolve2d` 的薄封裝；scipy 不存在時函式不會被定義。 |
 
 ### USD prim transforms

@@ -58,6 +58,10 @@ def convolve2d(
     pad_mode: Optional[str] = None,
 ) -> np.ndarray:
     """Naive 2D convolution. For production use prefer ``scipy_convolve2d`` below."""
+    if image.ndim != 2:
+        raise ValueError(f"image must be 2D, got {image.ndim}")
+    if kernel.ndim != 2:
+        raise ValueError(f"kernel must be 2D, got {kernel.ndim}")
     if not isinstance(strides, int) or strides < 1:
         raise ValueError(f"strides must be an integer >= 1, got {strides!r}")
     if not isinstance(padding, int) or padding < 0:
