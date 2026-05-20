@@ -39,14 +39,15 @@ class ProjectRootVariable(base.OutputProcessor):
 
     @staticmethod
     def parameters():
-        template = hou.StringParmTemplate(
+        group = hou.ParmTemplateGroup()
+        group.append(hou.StringParmTemplate(
             PARAM_NAME,
             'Project Root',
             1,
             string_type=hou.stringParmType.FileReference,
             file_type=hou.fileType.Directory,
-        )
-        return template.asDialogScript()
+        ))
+        return group.asDialogScript()
 
     def beginSave(self, config_node, config_overrides, lop_node, t, stage_variables):
         super().beginSave(config_node, config_overrides, lop_node, t, stage_variables)
