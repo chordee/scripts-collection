@@ -1,12 +1,12 @@
 # Houdini Python Toolkit (`chd_toolkits`)
 
-`HOUDINI/scripts/python/` 目錄是 Houdini Python module 搜尋路徑之一，本目錄只放 `chd_toolkits.py` — 一個整合的 Houdini-only 工具集，涵蓋 Houdini geometry 與 numpy 的橋接、影像卷積、以及 USD prim / material / clip / layer 查詢。
+`HOUDINI/scripts/python/` 目錄是 Houdini Python module 搜尋路徑之一，包含 `chd_toolkits.py`（Houdini-only 工具集，涵蓋 Houdini geometry 與 numpy 的橋接、影像卷積、以及 USD prim / material / clip / layer 查詢）與本 README 文件。
 
 ## 安裝
 
 `HOUDINI/scripts/python/` 在 `HOUDINI_PATH` 上時，會自動被 Houdini 的 `PYTHONPATH` 加入。設定方式：
 
-```
+```ini
 HOUDINI_PATH = D:/dev/scripts-collection/HOUDINI;&
 ```
 

@@ -58,20 +58,29 @@ def convolve2d(
     pad_mode: Optional[str] = None,
 ) -> np.ndarray:
     """Naive 2D convolution. For production use prefer ``scipy_convolve2d`` below."""
+    if not isinstance(strides, int) or strides < 1:
+        raise ValueError(f"strides must be an integer >= 1, got {strides!r}")
+    if not isinstance(padding, int) or padding < 0:
+        raise ValueError(f"padding must be a non-negative integer, got {padding!r}")
+
     if padding > 0:
-        if pad_mode is None:
-            image_padded = np.pad(image, padding, mode="constant")
-        else:
-            image_padded = np.pad(image, padding, mode=pad_mode)
+        mode = "constant" if pad_mode is None else pad_mode
+        image_padded = np.pad(image, padding, mode=mode)
     else:
         image_padded = image
 
     x_kern, y_kern = kernel.shape
     x_img, y_img = image_padded.shape
+    if x_kern > x_img or y_kern > y_img:
+        raise ValueError(
+            f"kernel shape {kernel.shape} larger than padded image shape "
+            f"{image_padded.shape}"
+        )
 
     x_out = (x_img - x_kern) // strides + 1
     y_out = (y_img - y_kern) // strides + 1
-    output = np.zeros((x_out, y_out), dtype=image.dtype)
+    out_dtype = np.result_type(image.dtype, kernel.dtype, np.float64)
+    output = np.zeros((x_out, y_out), dtype=out_dtype)
 
     for y in range(0, y_img - y_kern + 1, strides):
         for x in range(0, x_img - x_kern + 1, strides):
