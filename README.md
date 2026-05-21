@@ -4,9 +4,6 @@ This repository contains a collection of scripts and tools for various DCC (Digi
 
 ## Project Structure
 
-- **CPP/**  
-  C++ utilities and tools.
-
 - **HOUDINI/**  
   Python scripts and configuration files for Houdini, including PDG Deadline integration and menu customization.
 
@@ -24,7 +21,6 @@ Refer to individual script files for usage instructions and dependencies.
 ## Requirements
 
 - Python (for Python scripts)
-- C++ compiler (for CPP utilities)
 - Houdini and Maya (for DCC-specific scripts)
 
 ## License
