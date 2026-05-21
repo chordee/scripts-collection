@@ -1,6 +1,6 @@
 from maya import OpenMayaUI as omui
-from usd.USD import USD_Tab
-from system.System import System_Tab
+from tabs.usd_tab import USD_Tab
+from tabs.system_tab import System_Tab
 
 from PySide2 import QtWidgets, QtGui, QtCore
 from shiboken2 import wrapInstance
