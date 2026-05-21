@@ -4,7 +4,7 @@ Autodesk Maya 用的 Python 工具集。一個 PySide2 主視窗加上分頁式�
 
 ## 目錄結構
 
-```
+```text
 MAYA/
 └── scripts/
     └── python/
@@ -24,7 +24,7 @@ MAYA/
 
 把 `MAYA/scripts/python/` 加入 Maya 的 `PYTHONPATH`，例如在 `Maya.env`：
 
-```
+```text
 PYTHONPATH = D:/dev/scripts-collection/MAYA/scripts/python
 ```
 

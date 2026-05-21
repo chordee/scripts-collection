@@ -26,7 +26,7 @@ def build_materials_assignment_stage(
     Returns:
         建構完成的 Usd.Stage；若沒有 shape 子節點或無法建立根 prim 則回傳 None。
     """
-    shape_children = cmds.listRelatives(dag_object, ad=True, f=True, typ="shape")
+    shape_children = cmds.listRelatives(dag_object, ad=True, f=True, typ="mesh")
     if not shape_children:
         return None
 
@@ -58,7 +58,7 @@ def build_materials_assignment_stage(
             usd_material = UsdShade.Material.Define(
                 stage, scope.GetPrim().GetPath().AppendChild(material_name)
             )
-            UsdShade.MaterialBindingAPI(prim).Bind(usd_material)
+            UsdShade.MaterialBindingAPI(prim).Bind(usd_material, materialPurpose=purpose)
         elif len(shaders) > 1:
             shading_group_names = [om.MFnDependencyNode(x).name() for x in shaders]
             for shader_index, shading_group_name in enumerate(shading_group_names):

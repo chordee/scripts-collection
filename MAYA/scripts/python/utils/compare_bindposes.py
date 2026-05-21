@@ -36,7 +36,8 @@ def compare_dagpose_nodes(pose_nodes=None, tolerance=1e-5):
 
             try:
                 matrix = cmds.getAttr(f"{pose}.worldMatrix[{conn_index}]")
-            except Exception:
+            except RuntimeError as exc:
+                print(f"[warning] 無法讀取 {pose}.worldMatrix[{conn_index}]: {exc}")
                 continue
 
             if member not in joint_matrices:
@@ -97,7 +98,8 @@ def compare_skincluster_bindposes(skin_clusters=None, tolerance=1e-5):
                 try:
                     # 讀取綁定時的逆世界矩陣 (bindPreMatrix)
                     matrix = cmds.getAttr(f"{sc}.bindPreMatrix[{conn_index}]")
-                except Exception:
+                except RuntimeError as exc:
+                    print(f"[warning] 無法讀取 {sc}.bindPreMatrix[{conn_index}]: {exc}")
                     continue
                 
                 if inf not in joint_bind_matrices:

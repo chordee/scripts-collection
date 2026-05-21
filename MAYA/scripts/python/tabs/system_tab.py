@@ -67,10 +67,17 @@ class System_Tab(QtWidgets.QWidget):
         shape = shapes[0]
         try:
             cmds.parent(shape, sels[1], r=True, s=True)
-            if not cmds.listRelatives(sels[0], s=True):
-                cmds.delete(sels[0])
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Parent Shape", f"Parent 失敗: {e}")
+            return
+
+        if not cmds.listRelatives(sels[0], s=True):
+            try:
+                cmds.delete(sels[0])
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Parent Shape", f"Parent 成功，但清理空 transform 失敗: {e}"
+                )
 
     def import_all_refs(self):
         """
