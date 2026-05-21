@@ -15,10 +15,10 @@ class System_Tab(QtWidgets.QWidget):
         self.initUI()
 
     def initUI(self):
-        self.layout = QtWidgets.QHBoxLayout()
-        self.setLayout(self.layout)
+        self.main_layout = QtWidgets.QHBoxLayout()
+        self.setLayout(self.main_layout)
         self.buttons_layout = QtWidgets.QVBoxLayout()
-        self.layout.addLayout(self.buttons_layout)
+        self.main_layout.addLayout(self.buttons_layout)
         self.fontstyle_dialog = FontStyle_Dialog(self)
 
         # buttons_layout
@@ -41,8 +41,8 @@ class System_Tab(QtWidgets.QWidget):
         self.import_all_refs_btn.clicked.connect(self.import_all_refs)
         self.remove_all_namespace_btn.clicked.connect(self.remove_all_namespaces)
 
-        self.layout.setAlignment(QtCore.Qt.AlignTop)
-        self.layout.addStretch()
+        self.main_layout.setAlignment(QtCore.Qt.AlignTop)
+        self.main_layout.addStretch()
 
     def change_script_editor_font_style(self):
         """
@@ -69,6 +69,15 @@ class System_Tab(QtWidgets.QWidget):
             cmds.parent(shape, sels[1], r=True, s=True)
         except Exception as e:
             QtWidgets.QMessageBox.warning(self, "Parent Shape", f"Parent 失敗: {e}")
+            return
+
+        if not cmds.listRelatives(sels[0], s=True):
+            try:
+                cmds.delete(sels[0])
+            except Exception as e:
+                QtWidgets.QMessageBox.warning(
+                    self, "Parent Shape", f"Parent 成功，但清理空 transform 失敗: {e}"
+                )
 
     def import_all_refs(self):
         """
@@ -102,6 +111,7 @@ class System_Tab(QtWidgets.QWidget):
                 self, "Remove All Namespaces", "沒有可移除的 namespace。"
             )
             return
+        namespaces = sorted(namespaces, key=lambda x: x.count(':'), reverse=True)
         for ns in namespaces:
             if ns != "shared" and ns != "UI":
                 try:
@@ -191,7 +201,7 @@ class FontStyle_Dialog(QtWidgets.QDialog):
             return
 
         # for Maya 2022 and above
-        if int(cmds.about(version=True)) >= 2022:
+        if int(cmds.about(version=True).split('.')[0]) >= 2022:
             style = """
                 QPlainTextEdit {
                     font-family: %s;

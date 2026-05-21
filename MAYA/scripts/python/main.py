@@ -1,6 +1,6 @@
 from maya import OpenMayaUI as omui
-from usd.USD import USD_Tab
-from system.System import System_Tab
+from tabs.usd_tab import USD_Tab
+from tabs.system_tab import System_Tab
 
 from PySide2 import QtWidgets, QtGui, QtCore
 from shiboken2 import wrapInstance
@@ -47,9 +47,13 @@ class MainWidget(QtWidgets.QWidget):
 
 if __name__ == '__main__':
     mayaMainWindowPtr = omui.MQtUtil.mainWindow()
-    try:
-        mayaMainWindow = wrapInstance(long(mayaMainWindowPtr), QtWidgets.QWidget)
-    except NameError:
-        mayaMainWindow = wrapInstance(int(mayaMainWindowPtr), QtWidgets.QWidget)
+    mayaMainWindow = wrapInstance(int(mayaMainWindowPtr), QtWidgets.QWidget)
+
+    for widget in QtWidgets.QApplication.instance().topLevelWidgets():
+        if widget.objectName() == 'chd_tools_main_window':
+            widget.close()
+            break
+
     main_window = MainWin(parent=mayaMainWindow)
+    main_window.setObjectName('chd_tools_main_window')
     main_window.show()
