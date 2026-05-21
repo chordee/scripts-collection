@@ -66,7 +66,7 @@ class USD_Tab(QtWidgets.QWidget):
         """
         sel = cmds.ls(sl=1, l=1)
         if not sel:
-            print("Nothing be selected.")
+            cmds.warning("Nothing be selected.")
             return
         set_usd_type_name(sel[0], "SkelRoot")
 
@@ -89,7 +89,7 @@ class USD_Tab(QtWidgets.QWidget):
         """
         sel = cmds.ls(sl=True)
         if not sel:
-            print("Nothing be selected.")
+            cmds.warning("Nothing be selected.")
             return
 
         stage = build_materials_assignment_stage(
@@ -116,7 +116,7 @@ class USD_Tab(QtWidgets.QWidget):
         """
         sel = cmds.ls(sl=True)
         if not sel:
-            print("Nothing be selected.")
+            cmds.warning("Nothing be selected.")
             return
         obj = sel[0]
         filenames = cmds.fileDialog2(fm=0, fileFilter=USD_FILE_FILTER)
@@ -196,6 +196,9 @@ class Build_USD_Preview_Shader(QtWidgets.QDialog):
             if layout.lineedit.text() != ""
         }
         shader = build_usd_preview_shader(name, textures)
+        if not shader:
+            cmds.warning("Failed to create USD Preview Shader.")
+            return
         cmds.select(shader, r=1)
         self.close_widget()
 
