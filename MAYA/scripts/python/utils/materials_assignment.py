@@ -54,7 +54,7 @@ def build_materials_assignment_stage(
             )
             if not material_conns:
                 continue
-            material_name = material_conns[0]
+            material_name = material_conns[0].replace(":", "_")
             usd_material = UsdShade.Material.Define(
                 stage, scope.GetPath().AppendChild(material_name)
             )
@@ -67,7 +67,7 @@ def build_materials_assignment_stage(
                 )
                 if not material_conns:
                     continue
-                material_name = material_conns[0]
+                material_name = material_conns[0].replace(":", "_")
                 geom_subset = UsdGeom.Subset.Define(
                     stage, prim.GetPath().AppendChild(material_name)
                 )

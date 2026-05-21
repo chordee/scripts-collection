@@ -186,7 +186,10 @@ class Build_USD_Preview_Shader(QtWidgets.QDialog):
         """
         從 UI 收集名稱與貼圖路徑，呼叫 utils 建立 USD Preview Shader。
         """
-        name = self.shader_name_lineedit.text()
+        name = self.shader_name_lineedit.text().strip()
+        if not name:
+            cmds.warning("Shader name cannot be empty.")
+            return
         textures = {
             channel: layout.lineedit.text()
             for channel, layout in self.texture_layouts.items()
