@@ -21,10 +21,10 @@ class USD_Tab(QtWidgets.QWidget):
         self.initUI()
 
     def initUI(self):
-        self.layout = QtWidgets.QHBoxLayout()
-        self.setLayout(self.layout)
+        self.main_layout = QtWidgets.QHBoxLayout()
+        self.setLayout(self.main_layout)
         self.buttons_layout = QtWidgets.QVBoxLayout()
-        self.layout.addLayout(self.buttons_layout)
+        self.main_layout.addLayout(self.buttons_layout)
 
         # buttons_layout
         self.create_skelroot_btn = QtWidgets.QPushButton("Create SkelRoot Attribute")
@@ -53,8 +53,8 @@ class USD_Tab(QtWidgets.QWidget):
             self.export_selection_arnold_materials
         )
 
-        self.layout.setAlignment(QtCore.Qt.AlignTop)
-        self.layout.addStretch()
+        self.main_layout.setAlignment(QtCore.Qt.AlignTop)
+        self.main_layout.addStretch()
 
     def create_skelroot_action(self):
         """
@@ -65,7 +65,8 @@ class USD_Tab(QtWidgets.QWidget):
             print("Nothing be selected.")
             return
         obj = sel[0]
-        cmds.addAttr(obj, ln="USD_typeName", dt="string")
+        if not cmds.attributeQuery("USD_typeName", node=obj, exists=True):
+            cmds.addAttr(obj, ln="USD_typeName", dt="string")
         cmds.setAttr(obj + ".USD_typeName", "SkelRoot", typ="string")
 
     def create_usd_preview_shader(self):
@@ -79,7 +80,7 @@ class USD_Tab(QtWidgets.QWidget):
         self,
         merge=False,
         scopeName=DEFAULT_SCOPE_NAME,
-        purpose="all",
+        purpose="",
         assetVersion=None,
         assetName=None,
     ):
@@ -142,7 +143,7 @@ class USD_Tab(QtWidgets.QWidget):
                     )
                     geomSubset.CreateElementTypeAttr("face")
                     geomSubset.CreateIndicesAttr(
-                        [i for i, x in enumerate(indices) if x == shader_index]
+                        [face_idx for face_idx, sg_idx in enumerate(indices) if sg_idx == shader_index]
                     )
                     usdMaterial = UsdShade.Material.Define(
                         stage, scope.GetPrim().GetPath().AppendChild(shadingGroup_name)
@@ -152,7 +153,10 @@ class USD_Tab(QtWidgets.QWidget):
                     )
                     shader_index += 1
 
-        rootPrim = stage.GetPrimAtPath("/").GetAllChildren()[0]
+        root_children = stage.GetPrimAtPath("/").GetAllChildren()
+        if not root_children:
+            return
+        rootPrim = root_children[0]
         if assetVersion:
             rootPrim.SetAssetInfoByKey("version", assetVersion)
         if assetName:
@@ -162,6 +166,8 @@ class USD_Tab(QtWidgets.QWidget):
         filenames = cmds.fileDialog2(
             fm=0, startingDirectory=USD_START_DIR, fileFilter=USD_FILE_FILTER
         )
+        if not filenames:
+            return
         filename = filenames[0]
         stage.Export(filename)
 
@@ -364,7 +370,7 @@ class MtoaShadersToUSD:
         for prim in stage.Traverse():
             path = prim.GetPath()
             if prim.GetTypeName() == "Shader":
-                if "/" not in str(path.MakeRelativePath("/")):
+                if path.pathElementCount == 1:
                     edit.Add(
                         path,
                         shaders_scope_prim.GetPath().AppendPath(
@@ -373,22 +379,17 @@ class MtoaShadersToUSD:
                     )
 
         stage.GetRootLayer().Apply(edit)
-
-        edit_dict = {}
-        for i in edit.edits:
-            edit_dict[i.currentPath] = i.newPath
+        stage.Reload()
 
         for prim in stage.Traverse():
             if prim.GetTypeName() == "Shader":
                 shader = UsdShade.Shader.Define(stage, prim.GetPath())
-                for i in shader.GetInputs():
-                    attr = i.GetAttr()
+                for shader_input in shader.GetInputs():
+                    attr = shader_input.GetAttr()
                     if len(attr.GetConnections()) > 0:
-                        print(attr.Get())
                         con = attr.GetConnections()[0]
                         k = con.ReplacePrefix("/", shaders_scope_prim.GetPath())
-                        print(k, i.GetFullName(), prim)
-                        i.ConnectToSource(k)
+                        shader_input.ConnectToSource(k)
 
         for shadingGroup in self.shadingGroups:
             connection_attrs_map = {
@@ -416,16 +417,6 @@ class MtoaShadersToUSD:
                     ).ConnectToSource(shader, connection_attrs_map[connection_attr])
 
         stage.Save()
-
-    def getConnectionNodes(self, node, shadingGroup):
-        """
-        遞迴取得所有連結的 shader 節點。
-        """
-        res = cmds.listConnections(node, d=False, c=False, p=False)
-        if res:
-            for shader in res:
-                self.shaderMap[str(shader)] = str(shadingGroup)
-                self.getConnectionNodes(shader, shadingGroup)
 
     def setFilename(self, filename):
         """
