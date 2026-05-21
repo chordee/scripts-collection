@@ -1,12 +1,12 @@
-# -*- coding: UTF-8 -*_ 
+# -*- coding: UTF-8 -*-
 
 import sys
-from PySide2 import QtWidgets
+from PySide6 import QtWidgets
 
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
-        super(MainWindow, self).__init__()
+        super().__init__()
         self.setAcceptDrops(True)
 
     def dragEnterEvent(self, e):
@@ -29,4 +29,4 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    app.exec_()
+    app.exec()
