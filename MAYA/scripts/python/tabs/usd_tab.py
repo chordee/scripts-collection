@@ -6,6 +6,7 @@ from utils.materials_assignment import (
     DEFAULT_SCOPE_NAME,
     build_materials_assignment_stage,
 )
+from utils.usd_attrs import set_usd_type_name
 from utils.usd_preview_shader import build_usd_preview_shader
 
 
@@ -67,10 +68,7 @@ class USD_Tab(QtWidgets.QWidget):
         if not sel:
             print("Nothing be selected.")
             return
-        obj = sel[0]
-        if not cmds.attributeQuery("USD_typeName", node=obj, exists=True):
-            cmds.addAttr(obj, ln="USD_typeName", dt="string")
-        cmds.setAttr(obj + ".USD_typeName", "SkelRoot", typ="string")
+        set_usd_type_name(sel[0], "SkelRoot")
 
     def create_usd_preview_shader(self):
         """
