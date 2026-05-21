@@ -66,7 +66,7 @@ class USD_Tab(QtWidgets.QWidget):
         """
         sel = cmds.ls(sl=1, l=1)
         if not sel:
-            cmds.warning("Nothing be selected.")
+            cmds.warning("Nothing selected.")
             return
         set_usd_type_name(sel[0], "SkelRoot")
 
@@ -89,7 +89,7 @@ class USD_Tab(QtWidgets.QWidget):
         """
         sel = cmds.ls(sl=True)
         if not sel:
-            cmds.warning("Nothing be selected.")
+            cmds.warning("Nothing selected.")
             return
 
         stage = build_materials_assignment_stage(
@@ -116,7 +116,7 @@ class USD_Tab(QtWidgets.QWidget):
         """
         sel = cmds.ls(sl=True)
         if not sel:
-            cmds.warning("Nothing be selected.")
+            cmds.warning("Nothing selected.")
             return
         obj = sel[0]
         filenames = cmds.fileDialog2(fm=0, fileFilter=USD_FILE_FILTER)
