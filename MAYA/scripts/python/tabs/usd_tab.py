@@ -74,8 +74,8 @@ class USD_Tab(QtWidgets.QWidget):
         """
         彈出 USD Preview Shader 建立對話框。
         """
-        dialog = Build_USD_Preview_Shader(self)
-        dialog.show()
+        self.preview_shader_dialog = Build_USD_Preview_Shader(self)
+        self.preview_shader_dialog.show()
 
     def export_materials_assignment(
         self,

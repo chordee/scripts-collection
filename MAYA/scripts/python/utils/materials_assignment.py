@@ -56,7 +56,7 @@ def build_materials_assignment_stage(
                 continue
             material_name = material_conns[0]
             usd_material = UsdShade.Material.Define(
-                stage, scope.GetPrim().GetPath().AppendChild(material_name)
+                stage, scope.GetPath().AppendChild(material_name)
             )
             UsdShade.MaterialBindingAPI(prim).Bind(usd_material, materialPurpose=purpose)
         elif len(shaders) > 1:
@@ -69,7 +69,7 @@ def build_materials_assignment_stage(
                     continue
                 material_name = material_conns[0]
                 geom_subset = UsdGeom.Subset.Define(
-                    stage, prim.GetPrim().GetPath().AppendChild(material_name)
+                    stage, prim.GetPath().AppendChild(material_name)
                 )
                 geom_subset.CreateElementTypeAttr("face")
                 geom_subset.CreateIndicesAttr(
@@ -80,7 +80,7 @@ def build_materials_assignment_stage(
                     ]
                 )
                 usd_material = UsdShade.Material.Define(
-                    stage, scope.GetPrim().GetPath().AppendChild(material_name)
+                    stage, scope.GetPath().AppendChild(material_name)
                 )
                 UsdShade.MaterialBindingAPI(geom_subset).Bind(
                     usd_material, materialPurpose=purpose
