@@ -132,10 +132,12 @@ def add_sublayer(
         The path that was added (or already present), as a string.
 
     Raises:
-        ValueError: If ``stage`` is falsy.
+        ValueError: If ``stage`` is falsy, or ``index`` is negative.
     """
     if not stage:
         raise ValueError("Provided stage is None or invalid.")
+    if index < 0:
+        raise ValueError(f"index must be non-negative, got {index}")
 
     root_layer = stage.GetRootLayer()
     sublayer_path_str = str(sublayer_path)
