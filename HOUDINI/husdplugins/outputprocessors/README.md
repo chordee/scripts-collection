@@ -15,30 +15,7 @@ Output Processor 是 Solaris (LOP) 在輸出 USD 時的「攔截器」。當 USD
 - 修改即將寫出的 `Sdf.Layer`（例如塞入 `customLayerData`）
 - 在 begin/end 時掛入額外動作
 
-## 安裝位置
-
-Houdini 會自動掃描以下路徑底下的 `husdplugins/outputprocessors/`：
-
-- `$HOUDINI_USER_PREFS_DIR/husdplugins/outputprocessors/`
-- 任何 `HOUDINI_PATH` 上的目錄
-
-要讓 Houdini 看到本目錄，請在 `houdini.env` 或 package JSON 中將 `D:/dev/scripts-collection/HOUDINI` 加入 `HOUDINI_PATH`，例如：
-
-```
-HOUDINI_PATH = D:/dev/scripts-collection/HOUDINI;&
-```
-
-或 package 形式（`packages/scripts-collection.json`）：
-
-```json
-{
-    "env": [
-        { "HOUDINI_PATH": "D:/dev/scripts-collection/HOUDINI" }
-    ]
-}
-```
-
-安裝完成後，在 USD ROP 的 **Output Processors** 多重參數中即可選到自訂的 processor。
+安裝設定請參考 [`HOUDINI/README.md`](../../README.md)。安裝完成後在 USD ROP 的 **Output Processors** 多重參數即可選到自訂的 processor。
 
 ## 開發者 API 摘要
 

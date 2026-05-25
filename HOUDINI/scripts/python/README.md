@@ -7,29 +7,9 @@
 - USD prim / material / clip / layer 查詢（含 USD↔Houdini matrix 轉換）
 - COLMAP `points3D.bin` → Houdini 點雲
 - Nerfstudio `transforms.json` → Houdini 動畫相機
-- USD Value Clips stitcher（亦可作 standalone CLI）
+- USD Value Clips stitcher（純 Python 函式介面，無 CLI）
 
-## 安裝
-
-把 `D:/dev/scripts-collection/HOUDINI` 加入 `HOUDINI_PATH`，Houdini 會自動把 `HOUDINI/scripts/python/` 掛上 `PYTHONPATH`，無需 symlink 或 `userSetup.py`：
-
-```ini
-HOUDINI_PATH = D:/dev/scripts-collection/HOUDINI;&
-```
-
-或在 package JSON 中：
-
-```json
-{
-    "env": [
-        { "HOUDINI_PATH": "D:/dev/scripts-collection/HOUDINI" }
-    ]
-}
-```
-
-這個 `HOUDINI_PATH` 設定同時也會讓 `HOUDINI/husdplugins/outputprocessors/` 被偵測為自訂 output processor 來源，兩邊用同一條設定。
-
-之後在 Houdini 的 Python shell / Python SOP / HDA event handler：
+安裝設定請參考 [`HOUDINI/README.md`](../../README.md)。安裝完成後在 Houdini 的 Python shell / Python SOP / HDA event handler 即可：
 
 ```python
 import chd_toolkits as ct
@@ -39,6 +19,7 @@ ct.point_attrib_to_numpy(geo, "P")
 
 from chd_toolkits.colmap_points import read_points3d_binary_to_geo
 from chd_toolkits.nerfstudio_cam import create_animated_camera
+from chd_toolkits.stitch_usd_clips import stitch_clips
 ```
 
 ## 套件結構
@@ -49,10 +30,10 @@ HOUDINI/scripts/python/chd_toolkits/
 ├── core.py                Houdini / numpy / USD 核心 helper
 ├── colmap_points.py       COLMAP .bin → Houdini geometry
 ├── nerfstudio_cam.py      Nerfstudio transforms.json → Houdini 動畫相機
-└── stitch_usd_clips.py    USD Value Clips stitcher（含 CLI）
+└── stitch_usd_clips.py    USD Value Clips stitcher（純 Python 函式介面）
 ```
 
-`__init__.py` 採 try/except 包裹 `from .core import ...`，所以 plain Python（無 `hou`）執行 `python -m chd_toolkits.stitch_usd_clips` 不會因為 import core 失敗而炸掉。
+`__init__.py` 採 try/except 包裹 `from .core import ...`，所以在 plain Python（無 `hou`、有 `pxr`）下也能 `from chd_toolkits.stitch_usd_clips import stitch_clips` 而不會被 `core` 的 import 失敗連帶卡住。
 
 ## 相依
 
@@ -302,22 +283,27 @@ create_animated_camera(
 
 ### `stitch_usd_clips` — USD Value Clips stitcher
 
-把逐 frame 的 USD cache 串成單一 stage 的 USD Value Clips 形式，含 manifest / topology 自動產出與遞迴偵測 animated prim。**不需 Houdini**，純靠 `pxr`（Houdini 內建或 `pip install usd-core`）。
+把逐 frame 的 USD cache 串成單一 stage 的 USD Value Clips 形式，含 manifest / topology 自動產出與遞迴偵測 animated prim。
 
-#### CLI
+#### `stitch_clips`
 
-```bash
-hython -m chd_toolkits.stitch_usd_clips \
-    --filepath "/cache/sim.{frame:04d}.usd" \
-    --primpath "/World/Geo/sim" \
-    --output "/cache/stitched.usd" \
-    --frame-range 1 50
-```
-
-或在沒有 Houdini 的環境（只要有 `pip install usd-core`）：
-
-```bash
-python -m chd_toolkits.stitch_usd_clips --filepath ... --primpath ... --output ... --frame-range 1 50
+```python
+stitch_clips(
+    filepath_template: str,
+    primpath: str,
+    output_path: str,
+    frame_range: tuple[int, int],
+    scene_range: tuple[int, int] | None = None,
+    loop: bool = False,
+    clip_set: str = "default",
+    clip_primpath: str | None = None,
+    strict: bool = False,
+    gen_topology: bool = True,
+    gen_manifest: bool = True,
+    probe_frame: int | None = None,
+    auto_detect_prim: bool = True,
+    fps: float | None = None,
+) -> None
 ```
 
 支援的 frame token：
@@ -325,24 +311,31 @@ python -m chd_toolkits.stitch_usd_clips --filepath ... --primpath ... --output .
 - Python `.format` 風格：`/cache/sim.{frame:04d}.usd`
 - Houdini `$F` 風格：`/cache/sim.$F4.usd`
 
-主要旗標：
+主要參數：
 
-| Flag | 用途 |
-|---|---|
-| `--frame-range START END` | 原始檔案的 frame 範圍（必填） |
-| `--scene-range START END` | 場景時間軸範圍，省略則 = `--frame-range` |
-| `--loop` | 在 scene-range 比 frame-range 長時，迴圈延伸 |
-| `--clip-set NAME` | clip set 名稱，預設 `default` |
-| `--clip-primpath PATH` | clip 檔案內的 prim 路徑，省略則 = `--primpath` |
-| `--probe-frame F` | 用來生成 topology / manifest 的 frame，預設 = frame-range 起點 |
-| `--strict` | 任一 frame 檔案缺失即中止 |
-| `--fps F` | 輸出 stage 的 FPS；省略自動偵測 |
-| `--no-auto-detect` | 不遞迴偵測 animated child prim |
-| `--no-topology` / `--no-manifest` | 跳過自動產生 topology / manifest |
+| 參數 | 預設 | 用途 |
+|---|---|---|
+| `filepath_template` | (必填) | 逐 frame 路徑樣板，支援 `{frame:04d}` 或 `$F4` |
+| `primpath` | (必填) | 套用 clips 的 stage prim path |
+| `output_path` | (必填) | 輸出 `.usd` / `.usda` / `.usdc` |
+| `frame_range` | (必填) | 原始檔案 frame 範圍 `(start, end)`（含尾） |
+| `scene_range` | `None` | 場景時間軸範圍；`None` 等於 `frame_range` |
+| `loop` | `False` | scene_range 比 frame_range 長時迴圈延伸 |
+| `clip_set` | `"default"` | clip set 名稱 |
+| `clip_primpath` | `None` | clip 檔案內的 prim 路徑；`None` 等於 `primpath` |
+| `strict` | `False` | 任一 frame 檔案缺失即 raise `FileNotFoundError` |
+| `gen_topology` / `gen_manifest` | `True` | 是否自動產生 topology / manifest |
+| `probe_frame` | `None` | 生成 topology / manifest 的 frame；`None` 用 `frame_range` 起點 |
+| `auto_detect_prim` | `True` | 遞迴偵測 animated child prim |
+| `fps` | `None` | 輸出 stage 的 FPS；`None` 自動從 probe frame 偵測 |
 
-完整 usage 範例見 `stitch_usd_clips.py` 模組 docstring。
+失敗條件：
+- `probe_frame` 不在 `frame_range` 內 → `ValueError`
+- `probe_frame` 對應檔案不存在 → `FileNotFoundError`
+- `strict=True` 且任一 frame 檔案缺失 → `FileNotFoundError`
+- 無法在 stage 上 define `primpath` → `RuntimeError`
 
-#### Python API
+#### 使用範例
 
 ```python
 from chd_toolkits.stitch_usd_clips import stitch_clips
@@ -355,14 +348,16 @@ stitch_clips(
 )
 ```
 
-另外輔助函式（解析路徑 token、建 frame list、走訪 animated prim、產 topology / manifest）也都是 module 公開：
+#### 輔助函式
 
-- `resolve_filepath(template, frame)`
-- `build_clip_frame_lists(frame_range, scene_range, loop)`
-- `validate_files(filepaths, strict=False)`
-- `find_all_animated_prims(probe_frame_path, root_primpath)`
-- `generate_topology(probe_frame_path, clip_primpath, topology_path)`
-- `generate_manifest(probe_frame_path, clip_primpath, manifest_path)`
+`stitch_usd_clips` 也對外暴露幾個可獨立使用的工具：
+
+- `resolve_filepath(template, frame)` — 解析 `{frame:04d}` / `$F` 樣板
+- `build_clip_frame_lists(frame_range, scene_range, loop)` — 計算 scene/file frame 對應 list
+- `validate_files(filepaths, strict=False)` — 檢查檔案存在
+- `find_all_animated_prims(probe_frame_path, root_primpath)` — 走訪 probe frame 找出有 timesample 的 prim
+- `generate_topology(probe_frame_path, clip_primpath, topology_path)` — 產生 topology layer
+- `generate_manifest(probe_frame_path, clip_primpath, manifest_path)` — 產生 manifest layer
 
 ## 設計筆記
 
@@ -372,7 +367,7 @@ stitch_clips(
 - **mirror 偵測**：`compute_prim_scale` 用 rotation determinant < 0 判定鏡像，慣例上在 x 軸帶出負號。
 - **cycle detection**：`get_all_layers_in_layer` 用 visited set 追蹤 `layer.realPath` / 絕對路徑，避免 sublayer 互相 reference 造成無窮遞迴。
 - **scipy 是 optional**：透過 `importlib.util.find_spec` 偵測；不存在時 `scipy_convolve2d` 不會被定義（不是 stub），呼叫端會看到 `AttributeError` 而非靜默走錯路徑。
-- **無 Houdini 的場景**：`__init__.py` 對 `from .core import ...` 加 try/except，純 Python 也能執行 `python -m chd_toolkits.stitch_usd_clips`。
+- **無 Houdini 的場景**：`__init__.py` 對 `from .core import ...` 加 try/except，純 Python（無 `hou`、有 `pxr`）也能 `from chd_toolkits.stitch_usd_clips import stitch_clips` 當函式用。
 
 ## 參考文件
 

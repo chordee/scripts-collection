@@ -1,81 +1,22 @@
-#!/usr/bin/env python3
-r"""
-stitch_usd_clips.py
--------------------
-Standalone USD Value Clips stitcher — no Houdini required.
-Requires: pip install usd-core
+"""USD Value Clips stitcher.
 
-Auto-generates topology.usd and manifest.usd alongside the output file.
+Stitches a sequence of per-frame USD caches into a single stage that
+references them via the Value Clips composition arc. Auto-generates a
+``topology`` sublayer and a ``manifest`` asset alongside the output.
 
-Usage:
-    python stitch_usd_clips.py [options]
+Entry point is :func:`stitch_clips`. Helper utilities (``resolve_filepath``,
+``build_clip_frame_lists``, ``validate_files``, ``find_all_animated_prims``,
+``generate_topology``, ``generate_manifest``) are also public so other
+chd_toolkits modules / shelf scripts can compose them as needed.
 
-Examples:
-    # Basic: stitch frames 1-50 onto scene frames 1-50
-    python stitch_usd_clips.py \
-        --filepath "/cache/sim.{frame:04d}.usd" \
-        --primpath "/World/Geo/sim" \
-        --output "/cache/stitched.usd" \
-        --frame-range 1 50
-
-    # Loop: stretch 10-frame cache across 60 scene frames
-    python stitch_usd_clips.py \
-        --filepath "/cache/sim.{frame:04d}.usd" \
-        --primpath "/World/Geo/sim" \
-        --output "/cache/stitched.usd" \
-        --frame-range 1 10 \
-        --scene-range 1 60 \
-        --loop
-
-    # Custom clip set name
-    python stitch_usd_clips.py \
-        --filepath "/cache/sim.{frame:04d}.usd" \
-        --primpath "/World/Geo/sim" \
-        --output "/cache/stitched.usd" \
-        --frame-range 1 50 \
-        --clip-set "simCache"
-
-    # Use $F4 style token (Houdini convention)
-    python stitch_usd_clips.py \
-        --filepath "/cache/sim.\$F4.usd" \
-        --primpath "/World/Geo/sim" \
-        --output "/cache/stitched.usd" \
-        --frame-range 1 50
-
-    # Skip auto-generation of topology / manifest
-    python stitch_usd_clips.py \
-        --filepath "/cache/sim.{frame:04d}.usd" \
-        --primpath "/World/Geo/sim" \
-        --output "/cache/stitched.usd" \
-        --frame-range 1 50 \
-        --no-topology \
-        --no-manifest
-
-    # Use frame 25 as probe frame for topology / manifest
-    python stitch_usd_clips.py \
-        --filepath "/cache/sim.{frame:04d}.usd" \
-        --primpath "/World/Geo/sim" \
-        --output "/cache/stitched.usd" \
-        --frame-range 1 50 \
-        --probe-frame 25
+Houdini is not required at runtime — only ``pxr`` (bundled with Houdini
+or installable via ``pip install usd-core``).
 """
 
-import argparse
 import os
 import re
-import sys
 
-# ---------------------------------------------------------------------------
-# Dependency check
-# ---------------------------------------------------------------------------
-try:
-    from pxr import Usd, UsdGeom, Sdf
-except ImportError:
-    sys.exit(
-        "[ERROR] pxr module not found. Please install it first:\n"
-        "    pip install usd-core\n"
-        "Or ensure the Python environment from Houdini / another DCC is active."
-    )
+from pxr import Sdf, Usd
 
 
 # ---------------------------------------------------------------------------
@@ -130,10 +71,10 @@ def build_clip_frame_lists(
 
 
 def validate_files(filepaths: list[str], strict: bool = False) -> list[str]:
-    """
-    Checks whether each path exists.
-    strict=True  → abort on any missing file.
-    strict=False → print a warning and continue.
+    """Check whether each path exists.
+
+    With ``strict=True`` raises :class:`FileNotFoundError` when any file is
+    missing; otherwise prints a warning and returns the list of missing paths.
     """
     missing = [p for p in filepaths if not os.path.exists(p)]
     if missing:
@@ -143,7 +84,7 @@ def validate_files(filepaths: list[str], strict: bool = False) -> list[str]:
         if len(missing) > 10:
             msg += f"    ... and {len(missing)-10} more\n"
         if strict:
-            sys.exit("[ERROR] Strict mode: aborting.\n" + msg)
+            raise FileNotFoundError("Strict mode: aborting.\n" + msg)
         print(msg)
     return missing
 
@@ -364,17 +305,24 @@ def stitch_clips(
     # --- 3. Determine probe frame path ---
     if probe_frame is not None:
         if not (frame_range[0] <= probe_frame <= frame_range[1]):
-            sys.exit(
-                f"[ERROR] --probe-frame {probe_frame} is outside frame-range "
-                f"{frame_range[0]}–{frame_range[1]}."
+            raise ValueError(
+                f"probe_frame {probe_frame} is outside frame_range "
+                f"{frame_range[0]}-{frame_range[1]}."
             )
         probe_path = resolve_filepath(filepath_template, probe_frame)
         if not os.path.exists(probe_path):
-            sys.exit(f"[ERROR] Probe frame file does not exist: {probe_path}")
+            raise FileNotFoundError(
+                f"Probe frame file does not exist: {probe_path}"
+            )
         print(f"[INFO] Probe frame  : {probe_frame}  ({probe_path})")
     else:
         probe_frame = frame_range[0]
         probe_path = filepaths[0]
+        if not os.path.exists(probe_path):
+            raise FileNotFoundError(
+                f"Default probe frame file does not exist: {probe_path}. "
+                "Pass an explicit probe_frame pointing to an available file."
+            )
         print(f"[INFO] Probe frame  : {probe_frame} (default — first frame)")
 
     # --- 4. Auto-detect animated child prims ---
@@ -417,7 +365,7 @@ def stitch_clips(
     # --- 9. Ensure root prim exists ---
     root_prim = stage.DefinePrim(primpath)
     if not root_prim.IsValid():
-        sys.exit(f"[ERROR] Failed to define prim on stage: {primpath}")
+        raise RuntimeError(f"Failed to define prim on stage: {primpath}")
 
     # defaultPrim must be a top-level prim (/A/B/C → /A)
     top_name = Sdf.Path(primpath).GetPrefixes()[0]  # e.g. /Geometry
@@ -473,63 +421,3 @@ def stitch_clips(
     print(f"  Probe Frame        : {probe_frame}  ({probe_path})")
     print(f"  Topology           : {topology_path if gen_topology else '(skipped)'}")
     print(f"  Manifest           : {manifest_path if gen_manifest else '(skipped)'}")
-
-
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-def parse_args():
-    p = argparse.ArgumentParser(
-        description="Stitch per-frame USD files into a USD Value Clips stage.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=__doc__,
-    )
-    p.add_argument("--filepath",     required=True,
-                   help="Per-frame path template, e.g. /cache/sim.{frame:04d}.usd or /cache/sim.$F4.usd")
-    p.add_argument("--primpath",     required=True,
-                   help="Target prim path on the stage, e.g. /World/Geo/sim")
-    p.add_argument("--output",       required=True,
-                   help="Output path, e.g. /cache/stitched.usd")
-    p.add_argument("--frame-range",  required=True, nargs=2, type=int, metavar=("START", "END"),
-                   help="Frame range of the source files")
-    p.add_argument("--scene-range",  nargs=2, type=int, metavar=("START", "END"), default=None,
-                   help="Scene timeline frame range (defaults to frame-range if omitted)")
-    p.add_argument("--loop",         action="store_true",
-                   help="Loop file frames to fill the scene-range")
-    p.add_argument("--clip-set",     default="default",
-                   help="USD Clip Set name (default: default)")
-    p.add_argument("--clip-primpath", default=None,
-                   help="Prim path inside the clip files (defaults to --primpath)")
-    p.add_argument("--strict",       action="store_true",
-                   help="Abort if any source file is missing")
-    p.add_argument("--fps", type=float, default=None,
-                   help="Output stage FPS (default: auto-detected from probe frame)")
-    p.add_argument("--no-auto-detect", action="store_true",
-                   help="Disable auto-detection of animated child prims (use --primpath as-is)")
-    p.add_argument("--no-topology",  action="store_true",
-                   help="Skip auto-generation of topology.usd")
-    p.add_argument("--no-manifest",  action="store_true",
-                   help="Skip auto-generation of manifest.usd")
-    p.add_argument("--probe-frame",  type=int, default=None,
-                   help="Frame number used to generate topology / manifest (default: first frame of frame-range)")
-    return p.parse_args()
-
-
-if __name__ == "__main__":
-    args = parse_args()
-    stitch_clips(
-        filepath_template=args.filepath,
-        primpath=args.primpath,
-        output_path=args.output,
-        frame_range=tuple(args.frame_range),
-        scene_range=tuple(args.scene_range) if args.scene_range else None,
-        loop=args.loop,
-        clip_set=args.clip_set,
-        clip_primpath=args.clip_primpath,
-        strict=args.strict,
-        gen_topology=not args.no_topology,
-        gen_manifest=not args.no_manifest,
-        probe_frame=args.probe_frame,
-        auto_detect_prim=not args.no_auto_detect,
-        fps=args.fps,
-    )
