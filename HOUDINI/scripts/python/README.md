@@ -7,7 +7,7 @@
 - USD prim / material / clip / layer 查詢（含 USD↔Houdini matrix 轉換）
 - COLMAP `points3D.bin` → Houdini 點雲
 - Nerfstudio `transforms.json` → Houdini 動畫相機
-- USD Value Clips stitcher（亦可作 standalone CLI）
+- USD Value Clips stitcher（純 Python 函式介面，無 CLI）
 
 安裝設定請參考 [`HOUDINI/README.md`](../../README.md)。安裝完成後在 Houdini 的 Python shell / Python SOP / HDA event handler 即可：
 
@@ -30,10 +30,10 @@ HOUDINI/scripts/python/chd_toolkits/
 ├── core.py                Houdini / numpy / USD 核心 helper
 ├── colmap_points.py       COLMAP .bin → Houdini geometry
 ├── nerfstudio_cam.py      Nerfstudio transforms.json → Houdini 動畫相機
-└── stitch_usd_clips.py    USD Value Clips stitcher（含 CLI）
+└── stitch_usd_clips.py    USD Value Clips stitcher（純 Python 函式介面）
 ```
 
-`__init__.py` 採 try/except 包裹 `from .core import ...`，所以 plain Python（無 `hou`）執行 `python -m chd_toolkits.stitch_usd_clips` 不會因為 import core 失敗而炸掉。
+`__init__.py` 採 try/except 包裹 `from .core import ...`，所以在 plain Python（無 `hou`、有 `pxr`）下也能 `from chd_toolkits.stitch_usd_clips import stitch_clips` 而不會被 `core` 的 import 失敗連帶卡住。
 
 ## 相依
 

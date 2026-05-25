@@ -19,12 +19,17 @@ Houdini 21 起官方推薦透過 package 機制管理擴充。把 [`scripts-coll
 - Linux：`~/houdini21.0/packages/`
 - macOS：`~/Library/Preferences/houdini/21.0/packages/`
 
-如果你的 repo 不在 `D:/dev/scripts-collection/HOUDINI`，編輯 JSON 把路徑改成實際位置：
+如果你的 repo 不在 `D:/dev/scripts-collection/HOUDINI`，編輯 JSON 把路徑改成實際位置。注意 `value + method: append` 形式會在 Houdini 預設搜尋路徑後面**追加**（單純寫 `"HOUDINI_PATH": "..."` 會**覆蓋**預設）：
 
 ```json
 {
     "env": [
-        { "HOUDINI_PATH": "D:/dev/scripts-collection/HOUDINI" }
+        {
+            "HOUDINI_PATH": {
+                "value": "D:/dev/scripts-collection/HOUDINI",
+                "method": "append"
+            }
+        }
     ]
 }
 ```
@@ -50,7 +55,7 @@ HOUDINI_PATH = D:/dev/scripts-collection/HOUDINI;&
 import chd_toolkits as ct  # 確認 toolkit 可 import
 ```
 
-```
+```text
 # Solaris USD ROP 的 Output Processors 下拉，應出現：
 #   - Avalon Publish
 #   - Project Root Variable
@@ -96,8 +101,18 @@ HOUDINI/
 ```json
 {
     "env": [
-        { "HOUDINI_PATH": "D:/dev/scripts-collection/HOUDINI" },
-        { "PXR_PLUGINPATH_NAME": "D:/dev/scripts-collection/HOUDINI/pxr_plugins" }
+        {
+            "HOUDINI_PATH": {
+                "value": "D:/dev/scripts-collection/HOUDINI",
+                "method": "append"
+            }
+        },
+        {
+            "PXR_PLUGINPATH_NAME": {
+                "value": "D:/dev/scripts-collection/HOUDINI/pxr_plugins",
+                "method": "append"
+            }
+        }
     ]
 }
 ```

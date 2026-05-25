@@ -1,5 +1,10 @@
 {
     "env": [
-        { "HOUDINI_PATH": "D:/dev/scripts-collection/HOUDINI" }
+        {
+            "HOUDINI_PATH": {
+                "value": "D:/dev/scripts-collection/HOUDINI",
+                "method": "append"
+            }
+        }
     ]
 }

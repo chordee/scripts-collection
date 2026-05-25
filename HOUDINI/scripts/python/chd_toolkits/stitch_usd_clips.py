@@ -318,6 +318,11 @@ def stitch_clips(
     else:
         probe_frame = frame_range[0]
         probe_path = filepaths[0]
+        if not os.path.exists(probe_path):
+            raise FileNotFoundError(
+                f"Default probe frame file does not exist: {probe_path}. "
+                "Pass an explicit probe_frame pointing to an available file."
+            )
         print(f"[INFO] Probe frame  : {probe_frame} (default — first frame)")
 
     # --- 4. Auto-detect animated child prims ---
