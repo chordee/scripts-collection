@@ -61,14 +61,15 @@ exec(open(r"D:/dev/scripts-collection/MAYA/scripts/python/main.py").read())
 
 ### 之後要擴充（plug-ins / shelves / icons）
 
-`chordee-maya.mod` 已預留註解；建立對應目錄後把那幾行取消註解即可：
+`chordee-maya.mod` 末三行**原本就以 `//` 註解保留**，不需要新增；建立對應目錄後直接把那三行的 `//` 去掉即可：
 
 ```text
 + chordee-maya 0.2.0 ..
 PYTHONPATH +:= scripts/python
-MAYA_PLUG_IN_PATH +:= plug-ins
-MAYA_SHELF_PATH +:= shelves
-XBMLANGPATH +:= icons
+// 以下三行已在 .mod 內預留為註解；建立對應目錄後移除行首 `// ` 即可生效：
+// MAYA_PLUG_IN_PATH +:= plug-ins
+// MAYA_SHELF_PATH +:= shelves
+// XBMLANGPATH +:= icons
 ```
 
 ## 安裝（fallback：直接設 PYTHONPATH）
