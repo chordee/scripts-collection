@@ -158,7 +158,9 @@ def get_material_from_prim(prim: Usd.Prim) -> Optional[UsdShade.Material]:
     """Return the directly-bound UsdShade.Material on a prim, or None."""
     binding_api = UsdShade.MaterialBindingAPI(prim)
     direct_binding = binding_api.GetDirectBinding()
-    if direct_binding.GetMaterialPath().IsEmpty():
+    # Empty Sdf.Path is falsy; checking truthiness works across binding versions
+    # (`IsEmpty()` method is not exposed on Sdf.Path in some Houdini USD builds).
+    if not direct_binding.GetMaterialPath():
         return None
     material = direct_binding.GetMaterial()
     if material and material.GetPrim().IsValid():
