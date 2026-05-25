@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 stitch_usd_clips.py
 -------------------
 Standalone USD Value Clips stitcher — no Houdini required.
