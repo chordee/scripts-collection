@@ -25,12 +25,20 @@ from chd_toolkits.stitch_usd_clips import stitch_clips
 ## 套件結構
 
 ```text
-HOUDINI/scripts/python/chd_toolkits/
-├── __init__.py            re-export core helpers; defensive 對 plain Python（無 hou）
-├── core.py                Houdini / numpy / USD 核心 helper
-├── colmap_points.py       COLMAP .bin → Houdini geometry
-├── nerfstudio_cam.py      Nerfstudio transforms.json → Houdini 動畫相機
-└── stitch_usd_clips.py    USD Value Clips stitcher（純 Python 函式介面）
+HOUDINI/scripts/python/
+├── pyproject.toml             pytest 設定（非 packaged Python project）
+├── chd_toolkits/
+│   ├── __init__.py            re-export core helpers; defensive 對 plain Python（無 hou）
+│   ├── core.py                Houdini / numpy / USD 核心 helper
+│   ├── colmap_points.py       COLMAP .bin → Houdini geometry
+│   ├── nerfstudio_cam.py      Nerfstudio transforms.json → Houdini 動畫相機
+│   └── stitch_usd_clips.py    USD Value Clips stitcher（純 Python 函式介面）
+└── tests/
+    ├── conftest.py            sys.path 補上 chd_toolkits 上層
+    ├── run_hython.py          $HFS/bin/hython -m pytest tests/ 的 wrapper
+    ├── test_stitch_usd_clips.py    pxr-only；hython 或 plain Python 皆可
+    ├── test_core_usd.py            core 的 USD 函式；hython only
+    └── test_core_numpy.py          core 的 numpy 函式；hython only
 ```
 
 `__init__.py` 採 try/except 包裹 `from .core import ...`，所以在 plain Python（無 `hou`、有 `pxr`）下也能 `from chd_toolkits.stitch_usd_clips import stitch_clips` 而不會被 `core` 的 import 失敗連帶卡住。
@@ -41,6 +49,52 @@ HOUDINI/scripts/python/chd_toolkits/
 - `numpy` — core / colmap_points 需要
 - `pxr.Usd` / `pxr.UsdGeom` / `pxr.UsdShade` / `pxr.Sdf` / `pxr.Gf` — core / stitch_usd_clips 需要（Houdini 或 `pip install usd-core`）
 - `scipy`（**可選**；若存在則自動暴露 `chd_toolkits.scipy_convolve2d`）
+
+## 測試
+
+測試集中在 `tests/`，**主要設計在 Houdini 自帶的 hython 環境中跑** — 這樣 `pxr` 用的是 Houdini bundle 版而非 pip 的 `usd-core`，避免版本與 patch 差異導致「測試綠燈、實機壞」的情境。
+
+### 在 hython 內跑（推薦）
+
+1. 設好 `HFS` 指向 Houdini 安裝路徑：
+   - Windows：`set HFS=C:\Program Files\Side Effects Software\Houdini 21.0.376`
+   - Linux：`export HFS=/opt/hfs21.0.376`
+2. 安裝 pytest 到 hython 的 Python（一次性）：
+   ```shell
+   "%HFS%\bin\hython" -m pip install pytest
+   ```
+3. 跑全部測試：
+   ```shell
+   python tests/run_hython.py
+   ```
+   或加 pytest 參數：
+   ```shell
+   python tests/run_hython.py -v -k stitch
+   ```
+
+`tests/run_hython.py` 會找 `$HFS/bin/hython`、定位 `pyproject.toml`、用 hython 執行 `pytest tests/`。
+
+### 在 plain Python 跑（可選）
+
+只有 `test_stitch_usd_clips.py` 是純 pxr，可以離開 Houdini 在 plain Python 跑：
+
+```shell
+pip install pytest usd-core
+cd HOUDINI/scripts/python
+pytest tests/test_stitch_usd_clips.py
+```
+
+其他測試會偵測 `hou` 不存在自動 skip（透過 `pytest.importorskip`）。
+
+### 測試覆蓋現況
+
+| 檔案 | 覆蓋 | 環境 |
+|---|---|---|
+| `test_stitch_usd_clips.py` | 全部公開函式 + integration | hython / plain Python |
+| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection） | hython only |
+| `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
+
+尚未覆蓋（待 Phase 2）：`core.matrix_manipulate` / `point_attrib_to_numpy` / `primitive_xform`、`colmap_points`、`nerfstudio_cam` — 都需要實際 Houdini scene / geometry state，待整合測試補。
 
 ## API
 

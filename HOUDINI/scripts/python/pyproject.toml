@@ -1,0 +1,7 @@
+# pytest configuration for chd_toolkits.
+# This is not a packaged Python project — pyproject.toml here only hosts pytest config.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
