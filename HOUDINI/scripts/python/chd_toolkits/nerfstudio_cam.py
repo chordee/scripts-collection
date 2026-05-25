@@ -11,6 +11,19 @@ import hou
 _DEFAULT_SUBNET_NAME = "NeRF_Import"
 
 
+def _notify(message: str) -> None:
+    """Show ``message`` via ``hou.ui`` if available; otherwise print to stdout.
+
+    ``hou.ui`` is missing in headless hython / batch contexts, so the bare
+    ``hou.ui.displayMessage`` call would crash with ``AttributeError``.
+    """
+    ui = getattr(hou, "ui", None)
+    if ui is not None and hasattr(ui, "displayMessage"):
+        ui.displayMessage(message)
+    else:
+        print(message)
+
+
 def _get_frame_num(frame_data: Dict[str, Any]) -> int:
     """Extract the integer frame number embedded in ``frame_data['file_path']``."""
     fname = os.path.basename(frame_data["file_path"])
@@ -41,7 +54,7 @@ def create_animated_camera(
         contains no frames.
     """
     if not os.path.isfile(json_path):
-        hou.ui.displayMessage(f"Error: File not found at:\n{json_path}")
+        _notify(f"Error: File not found at:\n{json_path}")
         return None
 
     print(f"Loading JSON: {json_path}")

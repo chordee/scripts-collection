@@ -12,6 +12,19 @@ _POINT_RECORD_FMT = "<QdddBBBd"
 _POINT_RECORD_SIZE = 43
 
 
+def _notify(message: str) -> None:
+    """Show ``message`` via ``hou.ui`` if available; otherwise print to stdout.
+
+    ``hou.ui`` is missing in headless hython / batch contexts, so the bare
+    ``hou.ui.displayMessage`` call would crash with ``AttributeError``.
+    """
+    ui = getattr(hou, "ui", None)
+    if ui is not None and hasattr(ui, "displayMessage"):
+        ui.displayMessage(message)
+    else:
+        print(message)
+
+
 def read_points3d_binary_to_geo(
     path_to_model_file: str,
     parent_node: hou.SopNode,
@@ -27,11 +40,11 @@ def read_points3d_binary_to_geo(
         had an unsupported extension.
     """
     if not os.path.isfile(path_to_model_file):
-        hou.ui.displayMessage(f"File not found: {path_to_model_file}")
+        _notify(f"File not found: {path_to_model_file}")
         return None
 
     if not path_to_model_file.lower().endswith(".bin"):
-        hou.ui.displayMessage(
+        _notify(
             "Error: This script only supports COLMAP .bin format.\n"
             "If you want to read .ply, please use File SOP directly."
         )
