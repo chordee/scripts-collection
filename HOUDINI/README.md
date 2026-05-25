@@ -19,14 +19,14 @@ Houdini 21 起官方推薦透過 package 機制管理擴充。把 [`scripts-coll
 - Linux：`~/houdini21.0/packages/`
 - macOS：`~/Library/Preferences/houdini/21.0/packages/`
 
-如果你的 repo 不在 `D:/dev/scripts-collection/HOUDINI`，編輯 JSON 把路徑改成實際位置。注意 `value + method: append` 形式會在 Houdini 預設搜尋路徑後面**追加**（單純寫 `"HOUDINI_PATH": "..."` 會**覆蓋**預設）：
+如果你的 repo 不在 `<path-to-repo>/HOUDINI`，編輯 JSON 把路徑改成實際位置。注意 `value + method: append` 形式會在 Houdini 預設搜尋路徑後面**追加**（單純寫 `"HOUDINI_PATH": "..."` 會**覆蓋**預設）：
 
 ```json
 {
     "env": [
         {
             "HOUDINI_PATH": {
-                "value": "D:/dev/scripts-collection/HOUDINI",
+                "value": "<path-to-repo>/HOUDINI",
                 "method": "append"
             }
         }
@@ -41,7 +41,7 @@ package 機制好處：每個版本獨立檔案、Houdini 啟動時統一載入�
 若不想用 package JSON 也可以直接在 `houdini.env`（`%USERPROFILE%/Documents/houdini21.0/houdini.env`）裡寫：
 
 ```ini
-HOUDINI_PATH = D:/dev/scripts-collection/HOUDINI;&
+HOUDINI_PATH = <path-to-repo>/HOUDINI;&
 ```
 
 結尾的 `&` 代表「保留 Houdini 預設搜尋路徑」，務必加。
@@ -98,13 +98,13 @@ HOUDINI/
     "env": [
         {
             "HOUDINI_PATH": {
-                "value": "D:/dev/scripts-collection/HOUDINI",
+                "value": "<path-to-repo>/HOUDINI",
                 "method": "append"
             }
         },
         {
             "PXR_PLUGINPATH_NAME": {
-                "value": "D:/dev/scripts-collection/HOUDINI/pxr_plugins",
+                "value": "<path-to-repo>/HOUDINI/pxr_plugins",
                 "method": "append"
             }
         }

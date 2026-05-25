@@ -32,7 +32,7 @@ MAYA/
 在 `Maya.env` 加：
 
 ```ini
-MAYA_MODULE_PATH = D:/dev/scripts-collection/MAYA/modules
+MAYA_MODULE_PATH = <path-to-repo>/MAYA/modules
 ```
 
 Windows 多條 path 用 `;` 分隔，Linux/macOS 用 `:`。
@@ -54,7 +54,7 @@ Windows 多條 path 用 `;` 分隔，Linux/macOS 用 `:`。
 ```python
 import main
 # 或重新載入後直接執行模組
-exec(open(r"D:/dev/scripts-collection/MAYA/scripts/python/main.py").read())
+exec(open(r"<path-to-repo>/MAYA/scripts/python/main.py").read())
 ```
 
 `main.py` 會偵測同名舊視窗並先關閉，再開新視窗，避免疊圖。
@@ -77,14 +77,14 @@ PYTHONPATH +:= scripts/python
 若不想用 module 機制，也可以直接把 `MAYA/scripts/python/` 加進 `PYTHONPATH`：
 
 ```ini
-PYTHONPATH = D:/dev/scripts-collection/MAYA/scripts/python
+PYTHONPATH = <path-to-repo>/MAYA/scripts/python
 ```
 
 或在 `userSetup.py`：
 
 ```python
 import sys
-sys.path.append(r"D:/dev/scripts-collection/MAYA/scripts/python")
+sys.path.append(r"<path-to-repo>/MAYA/scripts/python")
 ```
 
 ## 分頁說明
