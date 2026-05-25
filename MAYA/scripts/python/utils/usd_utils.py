@@ -52,6 +52,7 @@ def create_empty_stage(name: Optional[str] = None) -> Usd.Stage:
             )
         transform_node = parents[0]
         new_transform = cmds.rename(transform_node, name)
+        new_transform = cmds.ls(new_transform, long=True)[0]
         shapes = cmds.listRelatives(new_transform, shapes=True, fullPath=True) or []
         if not shapes:
             raise RuntimeError(
@@ -146,11 +147,13 @@ def add_sublayer(
         return sublayer_path_str
 
     if index >= len(root_layer.subLayerPaths):
+        actual_index = len(root_layer.subLayerPaths)
         root_layer.subLayerPaths.append(sublayer_path_str)
     else:
+        actual_index = index
         root_layer.subLayerPaths.insert(index, sublayer_path_str)
 
-    _logger.info("Added sublayer '%s' at index %d.", sublayer_path_str, index)
+    _logger.info("Added sublayer '%s' at index %d.", sublayer_path_str, actual_index)
     return sublayer_path_str
 
 
