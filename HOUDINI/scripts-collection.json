@@ -2,7 +2,7 @@
     "env": [
         {
             "HOUDINI_PATH": {
-                "value": "D:/dev/scripts-collection/HOUDINI",
+                "value": "<path-to-repo>/HOUDINI",
                 "method": "append"
             }
         }
