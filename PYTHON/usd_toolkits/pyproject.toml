@@ -1,8 +1,0 @@
-[project]
-name = "usd-toolkits"
-version = "0.1.0"
-description = "USD utility functions"
-requires-python = ">=3.10"
-dependencies = [
-    "usd-core>=26.5",
-]
