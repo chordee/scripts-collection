@@ -1,10 +1,17 @@
 # Houdini Python Toolkit (`chd_toolkits`)
 
-`HOUDINI/scripts/python/` 目錄是 Houdini Python module 搜尋路徑之一，包含 `chd_toolkits.py`（Houdini-only 工具集，涵蓋 Houdini geometry 與 numpy 的橋接、影像卷積、以及 USD prim / material / clip / layer 查詢）與本 README 文件。
+`HOUDINI/scripts/python/chd_toolkits/` 是一個 Houdini 用的 Python package，整合：
+
+- Houdini geometry 與 numpy 的橋接
+- 影像 2D 卷積
+- USD prim / material / clip / layer 查詢（含 USD↔Houdini matrix 轉換）
+- COLMAP `points3D.bin` → Houdini 點雲
+- Nerfstudio `transforms.json` → Houdini 動畫相機
+- USD Value Clips stitcher（亦可作 standalone CLI）
 
 ## 安裝
 
-`HOUDINI/scripts/python/` 在 `HOUDINI_PATH` 上時，會自動被 Houdini 的 `PYTHONPATH` 加入。設定方式：
+把 `D:/dev/scripts-collection/HOUDINI` 加入 `HOUDINI_PATH`，Houdini 會自動把 `HOUDINI/scripts/python/` 掛上 `PYTHONPATH`，無需 symlink 或 `userSetup.py`：
 
 ```ini
 HOUDINI_PATH = D:/dev/scripts-collection/HOUDINI;&
@@ -20,22 +27,43 @@ HOUDINI_PATH = D:/dev/scripts-collection/HOUDINI;&
 }
 ```
 
-之後在 Houdini 的 Python shell、Python SOP、HDA event handler 等處：
+這個 `HOUDINI_PATH` 設定同時也會讓 `HOUDINI/husdplugins/outputprocessors/` 被偵測為自訂 output processor 來源，兩邊用同一條設定。
+
+之後在 Houdini 的 Python shell / Python SOP / HDA event handler：
 
 ```python
 import chd_toolkits as ct
+
+ct.compute_prim_scale(prim, frame)
+ct.point_attrib_to_numpy(geo, "P")
+
+from chd_toolkits.colmap_points import read_points3d_binary_to_geo
+from chd_toolkits.nerfstudio_cam import create_animated_camera
 ```
+
+## 套件結構
+
+```text
+HOUDINI/scripts/python/chd_toolkits/
+├── __init__.py            re-export core helpers; defensive 對 plain Python（無 hou）
+├── core.py                Houdini / numpy / USD 核心 helper
+├── colmap_points.py       COLMAP .bin → Houdini geometry
+├── nerfstudio_cam.py      Nerfstudio transforms.json → Houdini 動畫相機
+└── stitch_usd_clips.py    USD Value Clips stitcher（含 CLI）
+```
+
+`__init__.py` 採 try/except 包裹 `from .core import ...`，所以 plain Python（無 `hou`）執行 `python -m chd_toolkits.stitch_usd_clips` 不會因為 import core 失敗而炸掉。
 
 ## 相依
 
-- `hou`（Houdini 環境內建）
-- `numpy`
-- `pxr.Usd`、`pxr.UsdGeom`、`pxr.UsdShade`、`pxr.Sdf`、`pxr.Gf`（Houdini 內建）
-- `scipy`（**可選**；若存在則自動暴露 `scipy_convolve2d`）
+- `hou`（Houdini 內建）— core / colmap_points / nerfstudio_cam 需要
+- `numpy` — core / colmap_points 需要
+- `pxr.Usd` / `pxr.UsdGeom` / `pxr.UsdShade` / `pxr.Sdf` / `pxr.Gf` — core / stitch_usd_clips 需要（Houdini 或 `pip install usd-core`）
+- `scipy`（**可選**；若存在則自動暴露 `chd_toolkits.scipy_convolve2d`）
 
 ## API
 
-### Houdini geometry / numpy 橋接
+### `core` — Houdini / numpy / USD helpers
 
 #### `matrix_manipulate`
 
@@ -66,10 +94,6 @@ point_attrib_to_numpy(
 - `geo`：`hou.Geometry`。
 - `attr`：`str`，點屬性名稱，預設 `"P"`。
 - 回傳：`np.ndarray`，shape `(npoints, attr_size)`；int 屬性 dtype 為 `int32`、float 屬性為 `float32`。屬性不存在或非數值型別回 `None`。
-
----
-
-### 2D 卷積
 
 #### `convolve2d`
 
@@ -103,16 +127,12 @@ scipy_convolve2d(
 ) -> np.ndarray
 ```
 
-`scipy.signal.convolve2d` 的薄封裝。**只有在 scipy 可 import 時這個函式才會被定義**（透過 `importlib.util.find_spec` 偵測），否則不會出現在 module 命名空間。
+`scipy.signal.convolve2d` 的薄封裝。**只有在 scipy 可 import 時才會被定義**（透過 `importlib.util.find_spec` 偵測），否則不會出現在 module 命名空間。
 
 - `image`、`kernel`：2D `np.ndarray`。
 - `mode`：`str`，`"full"` / `"valid"` / `"same"`，預設 `"same"`。
 - `boundary`：`str`，`"fill"` / `"wrap"` / `"symm"`，預設 `"symm"`。
 - 回傳：`np.ndarray`，shape 視 `mode` 而定。
-
----
-
-### USD prim transforms
 
 #### `compute_prim_scale`
 
@@ -144,10 +164,6 @@ primitive_xform(
 - `time`：`int` / `float` / `Usd.TimeCode`，預設 `Usd.TimeCode.Default()`。
 - 回傳：`hou.Matrix4`，由 `Gf.Matrix4d` 的四個 row 顯式構造；非 Xformable 回 `None`。
 
----
-
-### USD material / asset / clip 查詢
-
 #### `get_material_from_prim`
 
 ```python
@@ -167,19 +183,13 @@ get_all_asset_paths_from_prim(prim: Usd.Prim) -> List[str]
 
 收集 prim 上所有 `Sdf.ValueTypeNames.Asset` / `AssetArray` 型屬性的已解析路徑，含 timesamples，去重。空字串路徑（resolve 失敗）會被略過。
 
-- `prim`：`Usd.Prim`。
-- 回傳：`List[str]`，每個元素為 `Sdf.AssetPath.resolvedPath`。無 asset 屬性時回空 list。
-
 #### `get_clip_names`
 
 ```python
 get_clip_names(prim: Usd.Prim) -> Optional[List[str]]
 ```
 
-列出 prim 上 `clips` metadata 內所有 clipSet 名稱。
-
-- `prim`：`Usd.Prim`。
-- 回傳：`List[str]`；無 `clips` metadata 時回 `None`。
+列出 prim 上 `clips` metadata 內所有 clipSet 名稱。無 `clips` metadata 時回 `None`。
 
 #### `get_clip_sequences_from_prim`
 
@@ -190,11 +200,7 @@ get_clip_sequences_from_prim(
 ) -> Optional[List[str]]
 ```
 
-取指定 clipSet 的 `assetPaths` 已解析路徑。**template 形式的 clip（用 `templateAssetPath` 而非 `assetPaths`）會回 `None`**。
-
-- `prim`：`Usd.Prim`。
-- `clip`：`str`，clipSet 名稱，預設 `'default'`。
-- 回傳：`List[str]`，去重；無 `clips` metadata、找不到該 clipSet、或該 clipSet 沒有 `assetPaths` 時回 `None`。
+取指定 clipSet 的 `assetPaths` 已解析路徑（去重）。**template 形式的 clip（用 `templateAssetPath` 而非 `assetPaths`）會回 `None`**。
 
 #### `get_all_clip_sequences_from_prim`
 
@@ -202,10 +208,7 @@ get_clip_sequences_from_prim(
 get_all_clip_sequences_from_prim(prim: Usd.Prim) -> Optional[List[str]]
 ```
 
-對 prim 上**所有** clipSet 做 `assetPaths` union。
-
-- `prim`：`Usd.Prim`。
-- 回傳：`List[str]`，去重；無 `clips` metadata 回 `None`。
+對 prim 上**所有** clipSet 做 `assetPaths` union；無 `clips` metadata 回 `None`。
 
 #### `get_all_asset_paths_from_stage`
 
@@ -216,11 +219,7 @@ get_all_asset_paths_from_stage(
 ) -> List[str]
 ```
 
-從 `prim_path` 開始用 `Usd.PrimRange` traverse，對每個 prim 呼叫 `get_all_asset_paths_from_prim` 並 union。
-
-- `stage`：`Usd.Stage`。
-- `prim_path`：`str` 或 `Sdf.Path`，起點 prim 路徑，預設 `'/'`。
-- 回傳：`List[str]`，去重；`prim_path` 不存在時 `PrimRange` 為空，回空 list。
+從 `prim_path` 開始用 `Usd.PrimRange` traverse，對每個 prim 呼叫 `get_all_asset_paths_from_prim` 並 union。`prim_path` 不存在時回空 list。
 
 #### `get_all_clip_sequences_from_stage`
 
@@ -233,40 +232,157 @@ get_all_clip_sequences_from_stage(
 
 從 `prim_path` 開始 traverse stage，對每個有 `clips` metadata 的 prim 呼叫 `get_all_clip_sequences_from_prim` 並 union。
 
-- `stage`：`Usd.Stage`。
-- `prim_path`：`str` 或 `Sdf.Path`，預設 `'/'`。
-- 回傳：`List[str]`，去重。
-
----
-
-### USD layer 走訪
-
 #### `get_all_layers_in_layer`
 
 ```python
 get_all_layers_in_layer(usd_layer: Union[str, Sdf.Layer]) -> List[str]
 ```
 
-走訪 layer 的所有 composition asset dependencies（sublayer / reference / payload，使用 `Sdf.Layer.GetCompositionAssetDependencies`）並遞迴展開。Cycle detection key 用 `layer.realPath`（fallback `identifier`）統一比對，避免 root 用相對路徑開啟時繞過檢查。
+走訪 layer 的所有 composition asset dependencies（sublayer / reference / payload，用 `Sdf.Layer.GetCompositionAssetDependencies`）並遞迴展開。Cycle detection key 用 `layer.realPath`（fallback `identifier`）統一比對，避免 root 用相對路徑開啟時繞過檢查。主 layer 開不起來時回空 list。
 
-- `usd_layer`：`str`（檔案路徑）或已開啟的 `Sdf.Layer`。
-- 回傳：`List[str]`，所有依賴 layer 的絕對路徑；主 layer 開不起來時回空 list。
+---
+
+### `colmap_points` — COLMAP `.bin` → Houdini geometry
+
+#### `read_points3d_binary_to_geo`
+
+```python
+read_points3d_binary_to_geo(
+    path_to_model_file: str,
+    parent_node: hou.SopNode,
+) -> Optional[int]
+```
+
+讀 COLMAP `points3D.bin` 寫入 Python SOP 的 geometry，建立 `P`、`Cd`（0–1 normalize）與 `error` 屬性，含 `InterruptableOperation` 進度條。
+
+- `path_to_model_file`：`points3D.bin` 路徑。非 `.bin` 副檔名或檔案不存在會跳訊息並回 `None`。
+- `parent_node`：Python SOP，其 `geometry()` 是接收點雲的容器。
+- 回傳：實際寫入的點數；失敗回 `None`。
+
+座標系統保持 COLMAP 原樣（Z-up）；要在 Houdini Y-up 顯示自行接 Transform SOP。
+
+#### 使用方式
+
+在 Python SOP 內：
+
+```python
+from chd_toolkits.colmap_points import read_points3d_binary_to_geo
+node = hou.pwd()
+read_points3d_binary_to_geo("/path/to/points3D.bin", node)
+```
+
+---
+
+### `nerfstudio_cam` — Nerfstudio `transforms.json` → 動畫相機
+
+#### `create_animated_camera`
+
+```python
+create_animated_camera(
+    json_path: str,
+    global_scale: float = 1.0,
+    cam_name: str = "Nerfstudio_Animated_Cam",
+    aperture_width: float = 36.0,
+    subnet_name: str = "NeRF_Import",
+) -> Optional[hou.ObjNode]
+```
+
+讀 Nerfstudio `transforms.json`，在 `/obj/<subnet_name>` 下建立一台 keyframed 相機，每個 JSON frame → 一組 tx/ty/tz/rx/ry/rz keyframe，套 `linear()`。
+
+- `json_path`：Nerfstudio JSON 路徑。
+- `global_scale`：translation 縮放倍率。
+- `cam_name`：相機節點名（已存在會 destroy 再重建）。
+- `aperture_width`：底片寬度 (mm)，與 JSON 的 `fl_x`、`w` 一起算 focal length (mm)。
+- `subnet_name`：容納相機的 subnet，無則建立。
+- 回傳：建立的 `hou.ObjNode`；檔案不存在或無 frame 時回 `None`。
+
+執行後會把 playbar 範圍設成首末 frame，並 set current frame 到起始 frame。座標系統校正目前是 identity（`hou.hmath.buildRotate(0, 0, 0)`），預留 hook，需要再自行接 Transform。
+
+---
+
+### `stitch_usd_clips` — USD Value Clips stitcher
+
+把逐 frame 的 USD cache 串成單一 stage 的 USD Value Clips 形式，含 manifest / topology 自動產出與遞迴偵測 animated prim。**不需 Houdini**，純靠 `pxr`（Houdini 內建或 `pip install usd-core`）。
+
+#### CLI
+
+```bash
+hython -m chd_toolkits.stitch_usd_clips \
+    --filepath "/cache/sim.{frame:04d}.usd" \
+    --primpath "/World/Geo/sim" \
+    --output "/cache/stitched.usd" \
+    --frame-range 1 50
+```
+
+或在沒有 Houdini 的環境（只要有 `pip install usd-core`）：
+
+```bash
+python -m chd_toolkits.stitch_usd_clips --filepath ... --primpath ... --output ... --frame-range 1 50
+```
+
+支援的 frame token：
+
+- Python `.format` 風格：`/cache/sim.{frame:04d}.usd`
+- Houdini `$F` 風格：`/cache/sim.$F4.usd`
+
+主要旗標：
+
+| Flag | 用途 |
+|---|---|
+| `--frame-range START END` | 原始檔案的 frame 範圍（必填） |
+| `--scene-range START END` | 場景時間軸範圍，省略則 = `--frame-range` |
+| `--loop` | 在 scene-range 比 frame-range 長時，迴圈延伸 |
+| `--clip-set NAME` | clip set 名稱，預設 `default` |
+| `--clip-primpath PATH` | clip 檔案內的 prim 路徑，省略則 = `--primpath` |
+| `--probe-frame F` | 用來生成 topology / manifest 的 frame，預設 = frame-range 起點 |
+| `--strict` | 任一 frame 檔案缺失即中止 |
+| `--fps F` | 輸出 stage 的 FPS；省略自動偵測 |
+| `--no-auto-detect` | 不遞迴偵測 animated child prim |
+| `--no-topology` / `--no-manifest` | 跳過自動產生 topology / manifest |
+
+完整 usage 範例見 `stitch_usd_clips.py` 模組 docstring。
+
+#### Python API
+
+```python
+from chd_toolkits.stitch_usd_clips import stitch_clips
+
+stitch_clips(
+    filepath_template="/cache/sim.{frame:04d}.usd",
+    primpath="/World/Geo/sim",
+    output_path="/cache/stitched.usd",
+    frame_range=(1, 50),
+)
+```
+
+另外輔助函式（解析路徑 token、建 frame list、走訪 animated prim、產 topology / manifest）也都是 module 公開：
+
+- `resolve_filepath(template, frame)`
+- `build_clip_frame_lists(frame_range, scene_range, loop)`
+- `validate_files(filepaths, strict=False)`
+- `find_all_animated_prims(probe_frame_path, root_primpath)`
+- `generate_topology(probe_frame_path, clip_primpath, topology_path)`
+- `generate_manifest(probe_frame_path, clip_primpath, manifest_path)`
 
 ## 設計筆記
 
 - **命名**：全部 snake_case，與 Python 慣例一致。
 - **回傳型別**：`Optional[List[...]]` 用於「資源不存在」回 None 的查詢；恆定回 list 的函式直接標 `List[...]`。
-- **時間參數**：接受 `int`、`float` 或 `Usd.TimeCode`；非 TimeCode 會自動包成 `Usd.TimeCode(time)`。
+- **時間參數**：`core` 的 `compute_prim_scale` / `primitive_xform` 接受 `int`、`float` 或 `Usd.TimeCode`；非 TimeCode 會自動包成 `Usd.TimeCode(time)`。
 - **mirror 偵測**：`compute_prim_scale` 用 rotation determinant < 0 判定鏡像，慣例上在 x 軸帶出負號。
-- **cycle detection**：`get_all_layers_in_layer` 用 visited set 追蹤 layer identifier 與絕對路徑，避免 sublayer 互相 reference 造成無窮遞迴。
+- **cycle detection**：`get_all_layers_in_layer` 用 visited set 追蹤 `layer.realPath` / 絕對路徑，避免 sublayer 互相 reference 造成無窮遞迴。
 - **scipy 是 optional**：透過 `importlib.util.find_spec` 偵測；不存在時 `scipy_convolve2d` 不會被定義（不是 stub），呼叫端會看到 `AttributeError` 而非靜默走錯路徑。
+- **無 Houdini 的場景**：`__init__.py` 對 `from .core import ...` 加 try/except，純 Python 也能執行 `python -m chd_toolkits.stitch_usd_clips`。
 
 ## 參考文件
 
 - HOM Geometry：<https://www.sidefx.com/docs/houdini/hom/hou/Geometry.html>
 - HOM Matrix4：<https://www.sidefx.com/docs/houdini/hom/hou/Matrix4.html>
+- HOM InterruptableOperation：<https://www.sidefx.com/docs/houdini/hom/hou/InterruptableOperation.html>
 - Gf.Matrix4d：<https://openusd.org/release/api/class_gf_matrix4d.html>
 - UsdGeomXformable：<https://openusd.org/release/api/class_usd_geom_xformable.html>
 - UsdShade MaterialBindingAPI：<https://openusd.org/release/api/class_usd_shade_material_binding_a_p_i.html>
 - USD Value Clips：<https://openusd.org/release/api/_usd__page__value_clips.html>
 - Sdf.Layer：<https://openusd.org/release/api/class_sdf_layer.html>
+- COLMAP Output Format：<https://colmap.github.io/format.html>
+- Nerfstudio `transforms.json`：<https://docs.nerf.studio/quickstart/data_conventions.html>
