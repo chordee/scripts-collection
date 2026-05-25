@@ -33,7 +33,7 @@ def _clear_hipfile_between_tests():
     """
     yield
     try:
-        import hou  # noqa: WPS433
+        import hou
     except ImportError:
         return
     hou.hipFile.clear(suppress_save_prompt=True)
@@ -50,7 +50,7 @@ class MockSopNode:
     """
 
     def __init__(self) -> None:
-        import hou  # noqa: WPS433  # deferred until hython is present
+        import hou  # deferred until hython is present
         self._geo = hou.Geometry()
 
     def geometry(self):  # noqa: D401 - matches hou.SopNode.geometry()
