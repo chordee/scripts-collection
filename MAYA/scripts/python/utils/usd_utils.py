@@ -178,6 +178,7 @@ def add_reference(
 
     Raises:
         ValueError: If ``stage`` is falsy.
+        RuntimeError: If ``UsdReferences.AddReference`` returns ``False``.
     """
     if not stage:
         raise ValueError("Provided stage is None or invalid.")
@@ -189,10 +190,15 @@ def add_reference(
         prim = stage.GetPrimAtPath(prim_path_str)
         if not prim.IsValid():
             prim = stage.DefinePrim(prim_path_str, "Xform")
-        prim.GetReferences().AddReference(
+        added = prim.GetReferences().AddReference(
             assetPath=str(ref_file_path),
             primPath=sdf_ref_prim_path,
         )
+        if not added:
+            raise RuntimeError(
+                f"AddReference failed for prim '{prim_path_str}' -> "
+                f"'{ref_file_path}' (primPath={sdf_ref_prim_path!r})"
+            )
         return prim
 
     if on_root_layer:
