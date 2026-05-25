@@ -1,27 +1,23 @@
 # Scripts Collection
 
-This repository contains a collection of scripts and tools for various DCC (Digital Content Creation) environments and general Python/C++ development.
+本 repository 收集個人在各種 DCC（Digital Content Creation）環境中使用的腳本與工具。
 
-## Project Structure
+## 目錄結構
 
-- **HOUDINI/**  
-  Python scripts and configuration files for Houdini, including PDG Deadline integration and menu customization.
+- **HOUDINI/**
+  Houdini 用的 Python 套件與 Solaris USD output processors。詳見 [`HOUDINI/README.md`](HOUDINI/README.md)。
 
-- **MAYA/**  
-  Python scripts and modules for Autodesk Maya, organized by system and USD utilities.
+- **MAYA/**
+  Autodesk Maya 用的 Python 套件與 module 設定（含 USD utilities）。詳見 [`MAYA/README.md`](MAYA/README.md)。
 
-- **PYTHON/**  
-  General-purpose Python scripts and toolkits, including PySide GUI examples and USD utilities.
+## 使用方式
 
-## Usage
+Clone 後依各 DCC 子目錄的 README 設定 search path 或 package。
 
-Clone the repository and explore the relevant directories for scripts or tools suited to your workflow.  
-Refer to individual script files for usage instructions and dependencies.
+## 相依
 
-## Requirements
-
-- Python (for Python scripts)
-- Houdini and Maya (for DCC-specific scripts)
+- 各 DCC 對應版本（Houdini / Maya）
+- Python（依各子目錄需求）
 
 ## License
 

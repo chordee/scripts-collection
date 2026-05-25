@@ -78,20 +78,15 @@ HOUDINI/
 │       ├── README.md               功能與 API 說明
 │       ├── avalonpublish.py
 │       └── projectrootvariable.py
-├── scripts/
-│   └── python/                     Houdini 自動加入 PYTHONPATH
-│       ├── README.md               chd_toolkits API 說明
-│       └── chd_toolkits/           Python package
-│           ├── __init__.py
-│           ├── core.py
-│           ├── colmap_points.py
-│           ├── nerfstudio_cam.py
-│           └── stitch_usd_clips.py
-├── MainMenuMaster.xml              主選單擴充
-├── PDGDeadline/                    PDG 與 Deadline 整合
-├── cylindrical_ortho.vfl           VEX：圓柱投影
-├── cylindrical_ortho_inv.vfl       VEX：圓柱投影反算
-└── fit_deadline_scheduler.py
+└── scripts/
+    └── python/                     Houdini 自動加入 PYTHONPATH
+        ├── README.md               chd_toolkits API 說明
+        └── chd_toolkits/           Python package
+            ├── __init__.py
+            ├── core.py
+            ├── colmap_points.py
+            ├── nerfstudio_cam.py
+            └── stitch_usd_clips.py
 ```
 
 ## 進階：使用其他 env 變數
