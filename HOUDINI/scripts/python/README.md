@@ -93,8 +93,13 @@ pytest tests/test_stitch_usd_clips.py
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration | hython / plain Python |
 | `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection） | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
+| `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
+| `test_colmap_points.py` | `read_points3d_binary_to_geo`（合成 COLMAP `.bin`、位置/色彩/error/track skip、`geo.clear()`、missing file、非 `.bin` 副檔名） | hython only |
+| `test_nerfstudio_cam.py` | `create_animated_camera`（節點建立、custom subnet、focal length 計算、解析度、6 軌 keyframe、playbar range、缺檔/空 frames 回 None、destroy+rebuild） | hython only |
 
-尚未覆蓋（待 Phase 2）：`core.matrix_manipulate` / `point_attrib_to_numpy` / `primitive_xform`、`colmap_points`、`nerfstudio_cam` — 都需要實際 Houdini scene / geometry state，待整合測試補。
+`conftest.py` 的 autouse fixture 在每個測試後自動 `hou.hipFile.clear()`，避免 `nerfstudio_cam` 建的 DAG / playbar 狀態污染下個測試。
+
+`tests/conftest.py::MockSopNode` 是給 `colmap_points` 用的最小 `hou.SopNode` stub（只實作 `.geometry()`），避免測試要真的 cook Python SOP。
 
 ## API
 
