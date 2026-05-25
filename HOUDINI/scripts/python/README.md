@@ -60,15 +60,15 @@ HOUDINI/scripts/python/
    - Windows：`set HFS=C:\Program Files\Side Effects Software\Houdini 21.0.376`
    - Linux：`export HFS=/opt/hfs21.0.376`
 2. 安裝 pytest 到 hython 的 Python（一次性）：
-   ```
+   ```shell
    "%HFS%\bin\hython" -m pip install pytest
    ```
 3. 跑全部測試：
-   ```
+   ```shell
    python tests/run_hython.py
    ```
    或加 pytest 參數：
-   ```
+   ```shell
    python tests/run_hython.py -v -k stitch
    ```
 
@@ -78,7 +78,7 @@ HOUDINI/scripts/python/
 
 只有 `test_stitch_usd_clips.py` 是純 pxr，可以離開 Houdini 在 plain Python 跑：
 
-```
+```shell
 pip install pytest usd-core
 cd HOUDINI/scripts/python
 pytest tests/test_stitch_usd_clips.py

@@ -28,8 +28,13 @@ def main() -> int:
         )
         return 2
 
+    hfs_path = Path(hfs)
+    if not hfs_path.is_dir():
+        print(f"HFS points to a non-existent directory: {hfs}", file=sys.stderr)
+        return 2
+
     hython_name = "hython.exe" if os.name == "nt" else "hython"
-    hython = Path(hfs) / "bin" / hython_name
+    hython = hfs_path / "bin" / hython_name
     if not hython.is_file():
         print(f"hython not found at {hython}", file=sys.stderr)
         return 2

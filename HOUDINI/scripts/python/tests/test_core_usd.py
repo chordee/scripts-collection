@@ -224,8 +224,8 @@ def test_get_all_layers_in_layer_with_sublayer(tmp_path):
     assert any("sub.usda" in d for d in deps)
 
 
-def test_get_all_layers_in_layer_handles_missing_file():
-    assert get_all_layers_in_layer("/nonexistent/path.usda") == []
+def test_get_all_layers_in_layer_handles_missing_file(tmp_path):
+    assert get_all_layers_in_layer(str(tmp_path / "nonexistent.usda")) == []
 
 
 def test_get_all_layers_in_layer_handles_cycle(tmp_path):
@@ -245,5 +245,6 @@ def test_get_all_layers_in_layer_handles_cycle(tmp_path):
     layer_b.Save(False)
 
     deps = get_all_layers_in_layer(a_path)
-    # Must terminate; b is found, a (the root) is not in the list
+    # Must terminate; b is found; a (the root layer) is not returned.
     assert any("b.usda" in d for d in deps)
+    assert not any("a.usda" in d for d in deps)
