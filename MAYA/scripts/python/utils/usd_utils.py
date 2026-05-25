@@ -183,23 +183,23 @@ def add_reference(
         raise ValueError("Provided stage is None or invalid.")
 
     prim_path_str = str(prim_path)
-    prim = stage.GetPrimAtPath(prim_path_str)
-    if not prim.IsValid():
-        prim = stage.DefinePrim(prim_path_str, "Xform")
-
     sdf_ref_prim_path = Sdf.Path(str(ref_prim_path)) if ref_prim_path else Sdf.Path()
 
-    def _author() -> None:
+    def _author() -> Usd.Prim:
+        prim = stage.GetPrimAtPath(prim_path_str)
+        if not prim.IsValid():
+            prim = stage.DefinePrim(prim_path_str, "Xform")
         prim.GetReferences().AddReference(
             assetPath=str(ref_file_path),
             primPath=sdf_ref_prim_path,
         )
+        return prim
 
     if on_root_layer:
         with Usd.EditContext(stage, stage.GetRootLayer()):
-            _author()
+            prim = _author()
     else:
-        _author()
+        prim = _author()
 
     target_repr = str(ref_prim_path) if ref_prim_path else "defaultPrim"
     _logger.info(

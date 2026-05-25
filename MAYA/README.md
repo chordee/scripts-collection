@@ -179,7 +179,7 @@ Maya USD plugin（`mayaUsdPlugin`）必須可載入；`ensure_usd_plugin()` 會�
 
 - 失敗時會 raise `RuntimeError` / `FileNotFoundError` / `ValueError`，呼叫端不會拿到「半成品」stage。
 - `add_sublayer` 比對 sublayer 時做路徑正規化（forward slash + 折疊冗餘 `.`），避免 `a/b.usd` 與 `./a/b.usd` 重複加入。
-- `add_reference` 預設用 `Usd.EditContext` 強制 author 在 root layer；若要 follow 當前 edit target 把 `on_root_layer=False`。
+- `add_reference` 預設用 `Usd.EditContext` 強制 author 在 root layer；若要沿用當前 edit target，把 `on_root_layer=False`。
 - 訊息透過 `logging.getLogger(__name__)`，呼叫端可自行設 level、轉接 handler。
 
 ## 相依
