@@ -6,6 +6,8 @@ Autodesk Maya 用的 Python 工具集。一個 PySide2 主視窗加上分頁式�
 
 ```text
 MAYA/
+├── modules/
+│   └── chordee-maya.mod         Maya module 定義（指向 scripts/python 等）
 └── scripts/
     └── python/
         ├── main.py              入口，建立主視窗並注入 Maya main window
@@ -21,11 +23,60 @@ MAYA/
             └── usd_utils.py
 ```
 
-## 啟動
+## 安裝（Maya module，推薦）
 
-把 `MAYA/scripts/python/` 加入 Maya 的 `PYTHONPATH`，例如在 `Maya.env`：
+`chordee-maya.mod` 把 `scripts/python` 自動掛上 `PYTHONPATH`，不需要動 `Maya.env` 或 `userSetup.py`。註冊方式擇一：
+
+**方式 A：把 `modules/` 加進 `MAYA_MODULE_PATH`**（建議；不複製檔案）
+
+在 `Maya.env` 加：
+
+```ini
+MAYA_MODULE_PATH = D:/dev/scripts-collection/MAYA/modules
+```
+
+Windows 多條 path 用 `;` 分隔，Linux/macOS 用 `:`。
+
+**方式 B：把 `.mod` 複製到 Maya 預設 modules 目錄**
+
+複製 `MAYA/modules/chordee-maya.mod` 到下列其中一個（隨 OS 與版本）：
+
+- Windows：`%USERPROFILE%/Documents/maya/<version>/modules/`
+- Linux：`~/maya/<version>/modules/`
+- macOS：`~/Library/Preferences/Autodesk/maya/<version>/modules/`
+
+要注意 `.mod` 第三欄 `..` 是相對於該檔案位置；複製過去後，`scripts/python` 必須仍在 `<該檔位置>/../scripts/python`。要嘛在那邊建好對應結構，要嘛改用方式 A。
+
+### 啟動 UI
+
+在 Maya 的 Script Editor（Python）執行：
+
+```python
+import main
+# 或重新載入後直接執行模組
+exec(open(r"D:/dev/scripts-collection/MAYA/scripts/python/main.py").read())
+```
+
+`main.py` 會偵測同名舊視窗並先關閉，再開新視窗，避免疊圖。
+
+### 之後要擴充（plug-ins / shelves / icons）
+
+`chordee-maya.mod` 末三行**原本就以 `//` 註解保留**，不需要新增；建立對應目錄後直接把那三行的 `//` 去掉即可：
 
 ```text
++ chordee-maya 0.2.0 ..
+PYTHONPATH +:= scripts/python
+// 以下三行已在 .mod 內預留為註解；建立對應目錄後移除行首 `// ` 即可生效：
+// MAYA_PLUG_IN_PATH +:= plug-ins
+// MAYA_SHELF_PATH +:= shelves
+// XBMLANGPATH +:= icons
+```
+
+## 安裝（fallback：直接設 PYTHONPATH）
+
+若不想用 module 機制，也可以直接把 `MAYA/scripts/python/` 加進 `PYTHONPATH`：
+
+```ini
 PYTHONPATH = D:/dev/scripts-collection/MAYA/scripts/python
 ```
 
@@ -35,16 +86,6 @@ PYTHONPATH = D:/dev/scripts-collection/MAYA/scripts/python
 import sys
 sys.path.append(r"D:/dev/scripts-collection/MAYA/scripts/python")
 ```
-
-之後在 Maya 的 Script Editor（Python）執行：
-
-```python
-import main
-# 或重新載入後直接執行模組
-exec(open(r"D:/dev/scripts-collection/MAYA/scripts/python/main.py").read())
-```
-
-`main.py` 會偵測同名舊視窗並先關閉，再開新視窗，避免疊圖。
 
 ## 分頁說明
 
