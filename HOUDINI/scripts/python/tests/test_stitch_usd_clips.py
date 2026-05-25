@@ -105,25 +105,30 @@ def test_validate_files_missing_non_strict_returns_list(tmp_path, capsys):
 
 @pytest.fixture
 def animated_frame(tmp_path):
-    """A single USD file with /World/Geo Xform + animated translate."""
+    """A single USD file with /Geo Xform + animated translate.
+
+    Uses a top-level prim because ``generate_topology`` re-roots the copied
+    hierarchy under ``/`` using the source prim's leaf name; nested paths
+    like ``/World/Geo`` would round-trip to ``/Geo`` and confuse assertions.
+    """
     path = str(tmp_path / "frame_1.usda")
     stage = Usd.Stage.CreateNew(path)
-    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+    xform = UsdGeom.Xform.Define(stage, "/Geo")
     op = xform.AddTranslateOp()
     op.Set(time=1.0, value=(1.0, 0, 0))
     op.Set(time=2.0, value=(2.0, 0, 0))
     stage.SetDefaultPrim(xform.GetPrim())
-    stage.GetRootLayer().Save()
+    stage.Save()
     return path
 
 
 def test_generate_topology_writes_file_and_strips_timesamples(tmp_path, animated_frame):
     out = str(tmp_path / "topology.usda")
-    generate_topology(animated_frame, "/World/Geo", out)
+    generate_topology(animated_frame, "/Geo", out)
     assert os.path.exists(out)
 
     stage = Usd.Stage.Open(out)
-    geo = stage.GetPrimAtPath("/World/Geo")
+    geo = stage.GetPrimAtPath("/Geo")
     assert geo.IsValid()
     translate_attr = geo.GetAttribute("xformOp:translate")
     if translate_attr.IsValid():
@@ -132,36 +137,36 @@ def test_generate_topology_writes_file_and_strips_timesamples(tmp_path, animated
 
 def test_generate_topology_sets_default_prim(tmp_path, animated_frame):
     out = str(tmp_path / "topology.usda")
-    generate_topology(animated_frame, "/World/Geo", out)
+    generate_topology(animated_frame, "/Geo", out)
     stage = Usd.Stage.Open(out)
     default = stage.GetDefaultPrim()
     assert default.IsValid()
-    assert str(default.GetPath()) == "/World/Geo"
+    assert str(default.GetPath()) == "/Geo"
 
 
 def test_generate_manifest_writes_file(tmp_path, animated_frame):
     out = str(tmp_path / "manifest.usda")
-    generate_manifest(animated_frame, "/World/Geo", out)
+    generate_manifest(animated_frame, "/Geo", out)
     assert os.path.exists(out)
 
 
 def test_find_all_animated_prims_finds_xform(animated_frame):
-    paths = find_all_animated_prims(animated_frame, "/World/Geo")
-    assert "/World/Geo" in paths
+    paths = find_all_animated_prims(animated_frame, "/Geo")
+    assert "/Geo" in paths
 
 
 def test_find_all_animated_prims_returns_root_when_static(tmp_path):
     path = str(tmp_path / "static.usda")
     stage = Usd.Stage.CreateNew(path)
-    UsdGeom.Xform.Define(stage, "/World/Geo")
-    stage.GetRootLayer().Save()
-    paths = find_all_animated_prims(path, "/World/Geo")
-    assert paths == ["/World/Geo"]
+    UsdGeom.Xform.Define(stage, "/Geo")
+    stage.Save()
+    paths = find_all_animated_prims(path, "/Geo")
+    assert paths == ["/Geo"]
 
 
 def test_find_all_animated_prims_returns_root_when_path_missing(tmp_path):
     path = str(tmp_path / "empty.usda")
-    Usd.Stage.CreateNew(path).GetRootLayer().Save()
+    Usd.Stage.CreateNew(path).Save()
     paths = find_all_animated_prims(path, "/Nope")
     assert paths == ["/Nope"]
 

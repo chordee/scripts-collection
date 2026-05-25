@@ -207,18 +207,18 @@ def test_get_all_clip_sequences_from_stage_finds_clip_prims(tmp_path):
 
 def test_get_all_layers_in_layer_no_dependencies(tmp_path):
     root = str(tmp_path / "root.usda")
-    Usd.Stage.CreateNew(root).GetRootLayer().Save()
+    Usd.Stage.CreateNew(root).Save()
     assert get_all_layers_in_layer(root) == []
 
 
 def test_get_all_layers_in_layer_with_sublayer(tmp_path):
     sub_path = str(tmp_path / "sub.usda")
-    Usd.Stage.CreateNew(sub_path).GetRootLayer().Save()
+    Usd.Stage.CreateNew(sub_path).Save()
 
     root_path = str(tmp_path / "root.usda")
     root_stage = Usd.Stage.CreateNew(root_path)
     root_stage.GetRootLayer().subLayerPaths.append("./sub.usda")
-    root_stage.GetRootLayer().Save()
+    root_stage.Save()
 
     deps = get_all_layers_in_layer(root_path)
     assert any("sub.usda" in d for d in deps)
@@ -233,15 +233,16 @@ def test_get_all_layers_in_layer_handles_cycle(tmp_path):
     a_path = str(tmp_path / "a.usda")
     b_path = str(tmp_path / "b.usda")
     # Create both first so FindOrOpen succeeds
-    Usd.Stage.CreateNew(a_path).GetRootLayer().Save()
-    Usd.Stage.CreateNew(b_path).GetRootLayer().Save()
+    Usd.Stage.CreateNew(a_path).Save()
+    Usd.Stage.CreateNew(b_path).Save()
     # Then wire the cycle
     layer_a = Sdf.Layer.FindOrOpen(a_path)
     layer_b = Sdf.Layer.FindOrOpen(b_path)
     layer_a.subLayerPaths.append("./b.usda")
     layer_b.subLayerPaths.append("./a.usda")
-    layer_a.Save()
-    layer_b.Save()
+    # SdfLayer.Save in this Houdini USD binding requires the `force` arg explicitly.
+    layer_a.Save(False)
+    layer_b.Save(False)
 
     deps = get_all_layers_in_layer(a_path)
     # Must terminate; b is found, a (the root) is not in the list
