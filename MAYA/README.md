@@ -17,7 +17,8 @@ MAYA/
             ├── compare_bindposes.py
             ├── materials_assignment.py
             ├── usd_attrs.py
-            └── usd_preview_shader.py
+            ├── usd_preview_shader.py
+            └── usd_utils.py
 ```
 
 ## 啟動
@@ -142,11 +143,51 @@ compare_skincluster_bindposes(tolerance=1e-5)
 
 `compare_skincluster_bindposes` 是刻意保留的檢查：實際的 artist 流程常會產生多個 skinCluster 但 `bindPreMatrix` 應相同，差異多半代表綁定狀態出問題。
 
+### `usd_utils`
+
+```python
+from utils.usd_utils import (
+    ensure_usd_plugin,
+    create_empty_stage,
+    create_stage_from_file,
+    add_sublayer,
+    add_reference,
+)
+
+ensure_usd_plugin()
+
+# 空 stage
+stage = create_empty_stage(name="myStage")
+
+# 從檔案載入
+stage = create_stage_from_file("D:/assets/foo.usda", name="foo")
+
+# 加 sublayer（index=0 為最強）
+add_sublayer(stage, "D:/assets/override.usda", index=0)
+
+# 加 reference；prim 不存在會自動 Define 一個 Xform
+add_reference(
+    stage,
+    prim_path="/World/Assets/Foo",
+    ref_file_path="D:/assets/foo_geo.usda",
+    ref_prim_path=None,           # 預設使用該檔案的 defaultPrim
+    on_root_layer=True,           # 確保 author 在 root layer，不受 edit target 影響
+)
+```
+
+Maya USD plugin（`mayaUsdPlugin`）必須可載入；`ensure_usd_plugin()` 會自動 load。
+
+- 失敗時會 raise `RuntimeError` / `FileNotFoundError` / `ValueError`，呼叫端不會拿到「半成品」stage。
+- `add_sublayer` 比對 sublayer 時做路徑正規化（forward slash + 折疊冗餘 `.`），避免 `a/b.usd` 與 `./a/b.usd` 重複加入。
+- `add_reference` 預設用 `Usd.EditContext` 強制 author 在 root layer；若要沿用當前 edit target，把 `on_root_layer=False`。
+- 訊息透過 `logging.getLogger(__name__)`，呼叫端可自行設 level、轉接 handler。
+
 ## 相依
 
 - Maya 2022 以上（Python 3、PySide2 / shiboken2）
 - `pxr.Usd`、`pxr.UsdGeom`、`pxr.UsdShade`、`pxr.Sdf`（Maya-USD plugin 內建）
 - `maya.api.OpenMaya`（Maya 內建 API 2.0）
+- `mayaUsd.ufe`、`mayaUsd_createStageWithNewLayer`（**僅** `usd_utils` 需要；Maya-USD plugin 內建）
 - `mtoa`（**僅** `arnold_to_usd` 與 USD tab 的 Arnold 匯出按鈕需要）
 
 ## 設計筆記
