@@ -4,6 +4,9 @@
 
 ## 目錄結構
 
+- **DEADLINE/**
+  Deadline Monitor 輔助腳本（複製 Job / Task ID 到剪貼簿）。詳見 [`DEADLINE/README.md`](DEADLINE/README.md)。
+
 - **HOUDINI/**
   Houdini 用的 Python 套件與 Solaris USD output processors。詳見 [`HOUDINI/README.md`](HOUDINI/README.md)。
 
