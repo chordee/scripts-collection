@@ -1,6 +1,4 @@
-import clr
-clr.AddReference("System.Windows.Forms")
-from System.Windows.Forms import Clipboard
+import subprocess
 from Deadline.Scripting import *
 
 
@@ -10,4 +8,13 @@ def __main__(*args):
     if not jobs or not tasks:
         return
     parts = [jobs[-1].JobId] + [str(task.TaskId) for task in tasks]
-    Clipboard.SetText(" ".join(parts))
+    _copy(" ".join(parts))
+
+
+def _copy(text):
+    subprocess.run(
+        ["clip"],
+        input=text.encode("utf-16-le"),
+        check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )

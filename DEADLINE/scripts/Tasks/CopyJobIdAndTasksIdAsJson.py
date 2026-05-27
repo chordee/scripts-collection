@@ -1,7 +1,5 @@
-import clr
-clr.AddReference("System.Windows.Forms")
-from System.Windows.Forms import Clipboard
 import json
+import subprocess
 from Deadline.Scripting import *
 
 
@@ -14,4 +12,13 @@ def __main__(*args):
         "job_id": jobs[-1].JobId,
         "task_ids": [task.TaskId for task in tasks],
     }}
-    Clipboard.SetText(json.dumps(data, separators=(",", ":")))
+    _copy(json.dumps(data, separators=(",", ":")))
+
+
+def _copy(text):
+    subprocess.run(
+        ["clip"],
+        input=text.encode("utf-16-le"),
+        check=False,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
