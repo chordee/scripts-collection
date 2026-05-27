@@ -19,7 +19,7 @@ DEADLINE/
 
 將 `scripts/Jobs/` 與 `scripts/Tasks/` 下的檔案複製到 Deadline Repository 的對應目錄：
 
-```
+```text
 <DeadlineRepository>/custom/scripts/Jobs/
 <DeadlineRepository>/custom/scripts/Tasks/
 ```

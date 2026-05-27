@@ -13,7 +13,7 @@ def __main__(*args):
 
 def _copy(text):
     subprocess.run(
-        ["clip"],
+        ["clip.exe"],
         input=text.encode("utf-16-le"),
         check=False,
         creationflags=subprocess.CREATE_NO_WINDOW,
