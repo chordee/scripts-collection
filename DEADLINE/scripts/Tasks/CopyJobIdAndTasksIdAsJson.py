@@ -1,6 +1,8 @@
+import clr
+clr.AddReference("System.Windows.Forms")
+from System.Windows.Forms import Clipboard
 import json
 from Deadline.Scripting import *
-import System.Windows.Forms as Forms
 
 
 def __main__(*args):
@@ -12,4 +14,4 @@ def __main__(*args):
         "job_id": jobs[-1].JobId,
         "task_ids": [task.TaskId for task in tasks],
     }}
-    Forms.Clipboard.SetText(json.dumps(data, separators=(",", ":")))
+    Clipboard.SetText(json.dumps(data, separators=(",", ":")))
