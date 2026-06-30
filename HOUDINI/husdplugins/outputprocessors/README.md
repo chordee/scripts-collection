@@ -53,9 +53,9 @@ Class 需繼承 `husd.outputprocessor.OutputProcessor`，並覆寫以下方法�
 
 ## 目錄內的 Processor
 
-### `avalonpublish.py` — Avalon Publish
+### `portablereferences.py` — Portable References
 
-為 Avalon publish 流程客製的 output processor，做兩件事：
+讓輸出 USD 整包可搬移的 output processor，做三件事：
 
 1. **將 reference 路徑改為相對於引用 layer 的相對路徑**，前提是該 reference 位於輸出目錄底下；不在輸出目錄底下的 reference 維持絕對路徑。Python procedural（檔名 `.py` 結尾，例如 Houdini Ocean Procedural 的 `invokegraph.py`）會原樣保留，不被改寫，因為它們是由 USD plugin 解析，而非檔案路徑。
 2. **將 save 路徑視為相對於主 USD 檔目錄**，自動補成絕對路徑。
@@ -63,7 +63,7 @@ Class 需繼承 `husd.outputprocessor.OutputProcessor`，並覆寫以下方法�
 
 #### 使用方式
 
-在 USD ROP 的 **Output Processors** 中加一筆，下拉選 `Avalon Publish` 即可。
+在 USD ROP 的 **Output Processors** 中加一筆，下拉選 `Portable References` 即可。
 
 #### 限制
 
@@ -94,5 +94,5 @@ Class 需繼承 `husd.outputprocessor.OutputProcessor`，並覆寫以下方法�
 - 變數名固定為 `PROJECT_ROOT`，目前不支援多個變數或自訂變數名。
 - **只改寫本身就是絕對路徑的 asset path**；相對路徑與已含 expression（backtick 或 `${`）的 path 一律 pass-through，不嘗試解析。
 - 路徑前綴比對的大小寫策略依平台：Windows 採大小寫不敏感（`.lower()` 比對），Linux/macOS 嚴格比對。判定依 `sys.platform`。
-- 與 `avalonpublish` 並用時注意串接順序：後執行的 processor 拿到的是前一個處理過的結果，可能影響預期。
+- 與 `portablereferences` 並用時注意串接順序：後執行的 processor 拿到的是前一個處理過的結果，可能影響預期。
 - 依賴 `Sdf.Layer.expressionVariables` API（USD 23.11 之後）；若 Houdini 內含的 USD 過舊，`processLayer` 會靜默跳過 metadata 寫入（path 改寫仍會發生，但下游無法解析）。

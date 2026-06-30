@@ -4,7 +4,7 @@
 
 | 子目錄 | 用途 |
 |---|---|
-| [`husdplugins/outputprocessors/`](husdplugins/outputprocessors/README.md) | Solaris USD ROP 自訂 output processor（avalonpublish、projectrootvariable） |
+| [`husdplugins/outputprocessors/`](husdplugins/outputprocessors/README.md) | Solaris USD ROP 自訂 output processor（portablereferences、projectrootvariable） |
 | [`scripts/python/chd_toolkits/`](scripts/python/README.md) | Houdini 用 Python toolkit package（geometry/numpy 橋接、USD 查詢、COLMAP/Nerfstudio 匯入、USD Value Clips stitcher） |
 
 ## 安裝
@@ -57,7 +57,7 @@ import chd_toolkits as ct  # 確認 toolkit 可 import
 
 ```text
 # Solaris USD ROP 的 Output Processors 下拉，應出現：
-#   - Avalon Publish
+#   - Portable References
 #   - Project Root Variable
 ```
 
@@ -76,7 +76,7 @@ HOUDINI/
 ├── husdplugins/
 │   └── outputprocessors/           Solaris USD output processors
 │       ├── README.md               功能與 API 說明
-│       ├── avalonpublish.py
+│       ├── portablereferences.py
 │       └── projectrootvariable.py
 └── scripts/
     └── python/                     Houdini 自動加入 PYTHONPATH
