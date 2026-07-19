@@ -50,7 +50,7 @@ class PortableReferences(base.OutputProcessor):
             return hou.text.abspath(asset_path, self.output_dir)
         return asset_path
 
-    def processLayer(self, layer):
+    def processLayer(self, layer, layersavepath=None):
         layer_data = layer.customLayerData
         layer_data['hip_file'] = hou.hipFile.path()
         layer_data['create_time'] = time.ctime()

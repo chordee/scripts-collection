@@ -18,7 +18,7 @@ def _normalize(path):
 
 
 def _match_key(path):
-    return path.lower() if CASE_INSENSITIVE else path
+    return path.casefold() if CASE_INSENSITIVE else path
 
 
 class ProjectRootVariable(base.OutputProcessor):
@@ -61,15 +61,19 @@ class ProjectRootVariable(base.OutputProcessor):
             self.project_root_key = ''
             return
 
-        self.project_root = _normalize(expanded)
+        if not os.path.isabs(expanded):
+            raise ValueError('Project Root must be an absolute path')
+
+        project_root = _normalize(expanded)
+        if not project_root:
+            raise ValueError('Filesystem root cannot be used as Project Root')
+
+        self.project_root = project_root
         self.project_root_key = _match_key(self.project_root) + '/'
         self.enabled = True
 
     def processReferencePath(self, asset_path, referencing_layer_path, asset_is_layer):
         if not self.enabled:
-            return asset_path
-
-        if '`' in asset_path or '${' in asset_path:
             return asset_path
 
         # PROJECT_ROOT only rewrites the beginning of absolute paths;
@@ -85,13 +89,16 @@ class ProjectRootVariable(base.OutputProcessor):
         rel = normalized[len(self.project_root):].lstrip('/')
         return '`"${' + VARIABLE_NAME + '}/' + rel + '"`'
 
-    def processLayer(self, layer):
+    def processLayer(self, layer, layersavepath=None):
         if not self.enabled:
             return False
 
         try:
             existing = dict(layer.expressionVariables)
         except AttributeError:
+            return False
+
+        if existing.get(VARIABLE_NAME) == self.project_root:
             return False
 
         existing[VARIABLE_NAME] = self.project_root
