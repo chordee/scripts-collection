@@ -23,6 +23,11 @@ def matrix_manipulate(
     if isinstance(matrix, hou.Matrix3):
         matrix = hou.Matrix4(matrix)
     mat = np.array(matrix.asTupleOfTuples(), dtype=np.float32)
+    # Cast explicitly: numpy's type promotion otherwise upgrades the float32
+    # result to float64 whenever the caller passes a float64 `data` array
+    # (e.g. a bare `np.array(...)`, whose default dtype is float64), silently
+    # breaking the documented float32 return contract.
+    data = np.asarray(data, dtype=np.float32)
     ext = np.ones((data.shape[0], 1), dtype=np.float32)
     homog = np.concatenate((data, ext), axis=1)
     return (homog @ mat)[:, :3]
