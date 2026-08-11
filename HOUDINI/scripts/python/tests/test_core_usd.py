@@ -15,11 +15,13 @@ from pxr import Sdf, Usd, UsdGeom, UsdShade
 
 from chd_toolkits.core import (
     compute_prim_scale,
+    dump_json,
     get_all_asset_paths_from_prim,
     get_all_asset_paths_from_stage,
     get_all_clip_sequences_from_prim,
     get_all_clip_sequences_from_stage,
     get_all_layers_in_layer,
+    get_all_shader_texture_paths_from_stage,
     get_clip_names,
     get_clip_sequences_from_prim,
     get_material_from_prim,
@@ -125,6 +127,25 @@ def test_get_all_asset_paths_from_stage_walks_children(tmp_path):
     paths = get_all_asset_paths_from_stage(stage)
     # Deduped: only one unique resolvedPath
     assert len(paths) == 1
+
+
+def test_get_all_asset_paths_from_stage_rejects_relative_prim_path():
+    stage = Usd.Stage.CreateInMemory()
+    with pytest.raises(ValueError):
+        get_all_asset_paths_from_stage(stage, "Looks")
+
+
+def test_get_all_asset_paths_from_prim_drops_udim_template():
+    """Existing (pre-shader-helper) behavior: a <UDIM> templated path has no
+    resolvedPath, so it is silently excluded — this must stay true after
+    _asset_paths_from_value gains udim_aware/missing_out params, since
+    get_all_asset_paths_from_prim never opts into either.
+    """
+    stage = Usd.Stage.CreateInMemory()
+    prim = stage.DefinePrim("/X", "Xform")
+    attr = prim.CreateAttribute("myAsset", Sdf.ValueTypeNames.Asset)
+    attr.Set(Sdf.AssetPath("textures/diffuse.<UDIM>.exr"))
+    assert get_all_asset_paths_from_prim(prim) == []
 
 
 # ---------------------------------------------------------------------------
@@ -248,3 +269,238 @@ def test_get_all_layers_in_layer_handles_cycle(tmp_path):
     # Must terminate; b is found; a (the root layer) is not returned.
     assert any("b.usda" in d for d in deps)
     assert not any("a.usda" in d for d in deps)
+
+
+def test_get_all_layers_in_layer_report_missing_false_returns_plain_list(tmp_path):
+    sub_path = str(tmp_path / "sub.usda")
+    Usd.Stage.CreateNew(sub_path).Save()
+    root_path = str(tmp_path / "root.usda")
+    root_stage = Usd.Stage.CreateNew(root_path)
+    root_stage.GetRootLayer().subLayerPaths.append("./sub.usda")
+    root_stage.Save()
+
+    deps = get_all_layers_in_layer(root_path)
+    assert isinstance(deps, list)
+    assert any("sub.usda" in d for d in deps)
+
+
+def test_get_all_layers_in_layer_report_missing_true_flags_broken_sublayer(tmp_path):
+    root_path = str(tmp_path / "root.usda")
+    root_stage = Usd.Stage.CreateNew(root_path)
+    root_stage.GetRootLayer().subLayerPaths.append("./missing.usda")
+    root_stage.Save()
+
+    found, missing = get_all_layers_in_layer(root_path, report_missing=True)
+    assert any("missing.usda" in d for d in missing)
+    # A missing dependency is still reported as "found" (it was referenced),
+    # just also flagged as unopenable.
+    assert any("missing.usda" in d for d in found)
+
+
+def test_get_all_layers_in_layer_report_missing_true_no_missing_when_all_resolve(tmp_path):
+    sub_path = str(tmp_path / "sub.usda")
+    Usd.Stage.CreateNew(sub_path).Save()
+    root_path = str(tmp_path / "root.usda")
+    root_stage = Usd.Stage.CreateNew(root_path)
+    root_stage.GetRootLayer().subLayerPaths.append("./sub.usda")
+    root_stage.Save()
+
+    found, missing = get_all_layers_in_layer(root_path, report_missing=True)
+    assert any("sub.usda" in d for d in found)
+    assert missing == []
+
+
+# ---------------------------------------------------------------------------
+# get_all_shader_texture_paths_from_stage
+# ---------------------------------------------------------------------------
+
+
+def test_get_all_shader_texture_paths_from_stage_finds_standard_texture_input(tmp_path):
+    target = tmp_path / "diffuse.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateIdAttr("UsdUVTexture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 1
+    assert paths[0].endswith("diffuse.exr")
+
+
+def test_get_all_shader_texture_paths_from_stage_finds_custom_named_input(tmp_path):
+    target = tmp_path / "normal.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/CustomShader")
+    shader.CreateInput("normalMap", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 1
+    assert paths[0].endswith("normal.exr")
+
+
+def test_get_all_shader_texture_paths_from_stage_ignores_non_asset_inputs(tmp_path):
+    target = tmp_path / "diffuse.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("scale", Sdf.ValueTypeNames.Float).Set(2.0)
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 1
+    assert paths[0].endswith("diffuse.exr")
+
+
+def test_get_all_shader_texture_paths_from_stage_ignores_non_shader_prims(tmp_path):
+    target = tmp_path / "diffuse.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    prim = stage.DefinePrim("/X", "Xform")
+    attr = prim.CreateAttribute("notAShaderInput", Sdf.ValueTypeNames.Asset)
+    attr.Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert paths == []
+
+
+def test_get_all_shader_texture_paths_from_stage_includes_unbound_orphan_shader(tmp_path):
+    target = tmp_path / "diffuse.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    # No MaterialBindingAPI applied anywhere — shader is "orphaned".
+    shader = UsdShade.Shader.Define(stage, "/Looks/unused/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 1
+
+
+def test_get_all_shader_texture_paths_from_stage_finds_asset_array_input(tmp_path):
+    target1 = tmp_path / "diffuse.exr"
+    target2 = tmp_path / "normal.exr"
+    target1.write_text("fake exr")
+    target2.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("files", Sdf.ValueTypeNames.AssetArray).Set(
+        [Sdf.AssetPath(str(target1)), Sdf.AssetPath(str(target2))]
+    )
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 2
+    assert any(p.endswith("diffuse.exr") for p in paths)
+    assert any(p.endswith("normal.exr") for p in paths)
+
+
+def test_get_all_shader_texture_paths_from_stage_finds_time_sampled_input(tmp_path):
+    target1 = tmp_path / "frame1.exr"
+    target2 = tmp_path / "frame2.exr"
+    target1.write_text("fake exr")
+    target2.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    file_input = shader.CreateInput("file", Sdf.ValueTypeNames.Asset)
+    file_input.GetAttr().Set(Sdf.AssetPath(str(target1)), 1.0)
+    file_input.GetAttr().Set(Sdf.AssetPath(str(target2)), 2.0)
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 2
+    assert any(p.endswith("frame1.exr") for p in paths)
+    assert any(p.endswith("frame2.exr") for p in paths)
+
+
+def test_get_all_shader_texture_paths_from_stage_rejects_relative_prim_path():
+    stage = Usd.Stage.CreateInMemory()
+    with pytest.raises(ValueError):
+        get_all_shader_texture_paths_from_stage(stage, "Looks")
+
+
+def test_get_all_shader_texture_paths_from_stage_udim_template_in_default_result():
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(
+        Sdf.AssetPath("textures/diffuse.<UDIM>.exr")
+    )
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert any("<UDIM>" in p for p in paths)
+
+
+def test_get_all_shader_texture_paths_from_stage_udim_not_in_missing():
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(
+        Sdf.AssetPath("textures/diffuse.<UDIM>.exr")
+    )
+
+    found, missing = get_all_shader_texture_paths_from_stage(stage, report_missing=True)
+    assert any("<UDIM>" in p for p in found)
+    assert missing == []
+
+
+def test_get_all_shader_texture_paths_from_stage_reports_broken_non_udim_path(tmp_path):
+    broken = str(tmp_path / "does_not_exist.exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(broken))
+
+    found, missing = get_all_shader_texture_paths_from_stage(stage, report_missing=True)
+    assert found == []
+    assert any("does_not_exist.exr" in m for m in missing)
+
+
+def test_get_all_shader_texture_paths_from_stage_missing_default_off(tmp_path):
+    """When report_missing=False (default), a broken path contributes nothing
+    (not resolved, and there's no missing list to inspect) — the return type
+    stays a plain list.
+    """
+    broken = str(tmp_path / "does_not_exist.exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(broken))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert paths == []
+
+
+# ---------------------------------------------------------------------------
+# get_all_clip_sequences_from_stage: prim_path validation
+# ---------------------------------------------------------------------------
+
+
+def test_get_all_clip_sequences_from_stage_rejects_relative_prim_path():
+    stage = Usd.Stage.CreateInMemory()
+    with pytest.raises(ValueError):
+        get_all_clip_sequences_from_stage(stage, "Scope")
+
+
+def test_get_all_clip_sequences_from_stage_accepts_sdf_path(tmp_path):
+    dummy = tmp_path / "dummy.usda"
+    dummy.write_text("#usda 1.0\n")
+    stage = Usd.Stage.CreateInMemory()
+    prim = stage.DefinePrim("/Scope", "Xform")
+    Usd.ClipsAPI(prim).SetClipAssetPaths([Sdf.AssetPath(str(dummy))], "default")
+
+    paths = get_all_clip_sequences_from_stage(stage, Sdf.Path("/Scope"))
+    assert len(paths) == 1
+
+
+# ---------------------------------------------------------------------------
+# dump_json
+# ---------------------------------------------------------------------------
+
+
+def test_dump_json_returns_string_without_path():
+    result = dump_json(["a.usda", "b.usda"])
+    assert isinstance(result, str)
+    assert "a.usda" in result
+
+
+def test_dump_json_writes_file_and_returns_none(tmp_path):
+    out_path = tmp_path / "deps.json"
+    result = dump_json({"found": ["a.usda"], "missing": []}, out_path)
+    assert result is None
+    assert out_path.exists()
+    assert "a.usda" in out_path.read_text(encoding="utf-8")
