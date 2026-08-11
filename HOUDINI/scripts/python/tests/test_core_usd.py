@@ -128,6 +128,19 @@ def test_get_all_asset_paths_from_stage_walks_children(tmp_path):
     assert len(paths) == 1
 
 
+def test_get_all_asset_paths_from_prim_drops_udim_template():
+    """Existing (pre-shader-helper) behavior: a <UDIM> templated path has no
+    resolvedPath, so it is silently excluded — this must stay true after
+    _asset_paths_from_value gains udim_aware/missing_out params, since
+    get_all_asset_paths_from_prim never opts into either.
+    """
+    stage = Usd.Stage.CreateInMemory()
+    prim = stage.DefinePrim("/X", "Xform")
+    attr = prim.CreateAttribute("myAsset", Sdf.ValueTypeNames.Asset)
+    attr.Set(Sdf.AssetPath("textures/diffuse.<UDIM>.exr"))
+    assert get_all_asset_paths_from_prim(prim) == []
+
+
 # ---------------------------------------------------------------------------
 # get_clip_names / get_clip_sequences_from_prim
 # ---------------------------------------------------------------------------

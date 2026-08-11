@@ -175,17 +175,43 @@ def get_material_from_prim(prim: Usd.Prim) -> Optional[UsdShade.Material]:
     return None
 
 
-def _asset_paths_from_value(value) -> List[str]:
+_UDIM_TOKEN = '<UDIM>'
+
+
+def _resolved_asset_path(item, missing_out: Optional[List[str]], udim_aware: bool) -> Optional[str]:
+    """Resolve one Sdf.AssetPath. UDIM-templated paths (containing "<UDIM>")
+    never have a resolvedPath (the resolver does not expand the token), so
+    when udim_aware is set they are returned as-authored instead of being
+    treated as unresolved.
+    """
+    if not item:
+        return None
+    if item.resolvedPath:
+        return item.resolvedPath
+    if udim_aware and _UDIM_TOKEN in item.path:
+        return item.path
+    if missing_out is not None and item.path:
+        missing_out.append(item.path)
+    return None
+
+
+def _asset_paths_from_value(
+    value,
+    missing_out: Optional[List[str]] = None,
+    udim_aware: bool = False,
+) -> List[str]:
     if value is None:
         return []
     if isinstance(value, Sdf.AssetPath):
-        return [value.resolvedPath] if value.resolvedPath else []
+        resolved = _resolved_asset_path(value, missing_out, udim_aware)
+        return [resolved] if resolved else []
     # AssetArray comes back as a VtArray of Sdf.AssetPath
     out = []
     try:
         for item in value:
-            if item and item.resolvedPath:
-                out.append(item.resolvedPath)
+            resolved = _resolved_asset_path(item, missing_out, udim_aware)
+            if resolved:
+                out.append(resolved)
     except TypeError:
         pass
     return out
