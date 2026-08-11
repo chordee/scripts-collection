@@ -13,3 +13,6 @@ backup/
 
 # plan-mode / brainstorming-skill output (specs, plans) — local only, never committed
 docs/superpowers/
+
+# subagent-driven-development scratch workspace (ledgers, briefs, review packages)
+.superpowers/
