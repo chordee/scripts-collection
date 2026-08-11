@@ -28,6 +28,7 @@ try:
         get_all_asset_paths_from_stage,
         get_all_clip_sequences_from_stage,
         get_all_layers_in_layer,
+        dump_json,
     )
 except ImportError:
     # core requires hou + pxr; only available inside Houdini.

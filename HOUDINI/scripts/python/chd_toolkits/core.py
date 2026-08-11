@@ -1,7 +1,9 @@
 """Houdini Python toolkit: geometry/numpy bridge, USD prim queries, and layer traversal helpers."""
 
 import importlib.util
-from typing import List, Optional, Union
+import json
+from pathlib import Path
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -259,6 +261,13 @@ def get_all_clip_sequences_from_stage(
     prim_path: Union[str, Sdf.Path] = '/',
 ) -> List[str]:
     """Walk the stage and union all clipSet asset paths."""
+    prim_path = Sdf.Path(prim_path)
+    if not prim_path.IsAbsolutePath():
+        # A relative prim_path makes GetPrimAtPath() return an invalid prim,
+        # which silently walks zero prims instead of raising - fail loudly
+        # instead of returning a misleading empty result.
+        raise ValueError(f"prim_path must be an absolute path, got {prim_path!r}")
+
     sequences: List[str] = []
     start_prim = stage.GetPrimAtPath(prim_path)
     for prim in Usd.PrimRange(start_prim):
@@ -275,20 +284,26 @@ def get_all_clip_sequences_from_stage(
 
 def get_all_layers_in_layer(
     usd_layer: Union[str, Sdf.Layer],
-) -> List[str]:
+    report_missing: bool = False,
+) -> Union[List[str], Tuple[List[str], List[str]]]:
     """All composition asset dependencies (sublayer/reference/payload) under a layer.
 
     Returns absolute paths; cycles are detected to prevent infinite recursion.
+    If ``report_missing`` is True, returns ``(found, missing)`` instead, where
+    ``missing`` lists dependency paths that could not be opened (broken
+    references, deleted files, etc.); such paths are still included in
+    ``found`` and are not recursed into further.
     """
     if isinstance(usd_layer, Sdf.Layer):
         main_layer = usd_layer
     else:
         main_layer = Sdf.Layer.FindOrOpen(usd_layer)
     if main_layer is None:
-        return []
+        return ([], []) if report_missing else []
 
     root_key = main_layer.realPath or main_layer.identifier
     found: List[str] = []
+    missing: List[str] = []
     visited = {root_key}
 
     def walk(layer: Sdf.Layer) -> None:
@@ -303,6 +318,21 @@ def get_all_layers_in_layer(
             found.append(dep_key)
             if sub is not None:
                 walk(sub)
+            else:
+                missing.append(dep_key)
 
     walk(main_layer)
-    return found
+    return (found, missing) if report_missing else found
+
+
+# ---------------------------------------------------------------------------
+# JSON export
+# ---------------------------------------------------------------------------
+
+def dump_json(data, path: Union[str, Path, None] = None) -> Optional[str]:
+    """Serialize ``data`` to JSON. Writes to ``path`` if given, else returns the string."""
+    text = json.dumps(data, indent=2, ensure_ascii=False)
+    if path is None:
+        return text
+    Path(path).write_text(text, encoding='utf-8')
+    return None
