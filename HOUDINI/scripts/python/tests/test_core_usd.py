@@ -21,6 +21,7 @@ from chd_toolkits.core import (
     get_all_clip_sequences_from_prim,
     get_all_clip_sequences_from_stage,
     get_all_layers_in_layer,
+    get_all_shader_texture_paths_from_stage,
     get_clip_names,
     get_clip_sequences_from_prim,
     get_material_from_prim,
@@ -301,6 +302,79 @@ def test_get_all_layers_in_layer_report_missing_true_no_missing_when_all_resolve
     found, missing = get_all_layers_in_layer(root_path, report_missing=True)
     assert any("sub.usda" in d for d in found)
     assert missing == []
+
+
+# ---------------------------------------------------------------------------
+# get_all_shader_texture_paths_from_stage
+# ---------------------------------------------------------------------------
+
+
+def test_get_all_shader_texture_paths_from_stage_finds_standard_texture_input(tmp_path):
+    target = tmp_path / "diffuse.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateIdAttr("UsdUVTexture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 1
+    assert paths[0].endswith("diffuse.exr")
+
+
+def test_get_all_shader_texture_paths_from_stage_finds_custom_named_input(tmp_path):
+    target = tmp_path / "normal.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/CustomShader")
+    shader.CreateInput("normalMap", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 1
+    assert paths[0].endswith("normal.exr")
+
+
+def test_get_all_shader_texture_paths_from_stage_ignores_non_asset_inputs(tmp_path):
+    target = tmp_path / "diffuse.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("scale", Sdf.ValueTypeNames.Float).Set(2.0)
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 1
+    assert paths[0].endswith("diffuse.exr")
+
+
+def test_get_all_shader_texture_paths_from_stage_ignores_non_shader_prims(tmp_path):
+    target = tmp_path / "diffuse.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    prim = stage.DefinePrim("/X", "Xform")
+    attr = prim.CreateAttribute("notAShaderInput", Sdf.ValueTypeNames.Asset)
+    attr.Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert paths == []
+
+
+def test_get_all_shader_texture_paths_from_stage_includes_unbound_orphan_shader(tmp_path):
+    target = tmp_path / "diffuse.exr"
+    target.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    # No MaterialBindingAPI applied anywhere — shader is "orphaned".
+    shader = UsdShade.Shader.Define(stage, "/Looks/unused/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 1
+
+
+def test_get_all_shader_texture_paths_from_stage_rejects_relative_prim_path():
+    stage = Usd.Stage.CreateInMemory()
+    with pytest.raises(ValueError):
+        get_all_shader_texture_paths_from_stage(stage, "Looks")
 
 
 # ---------------------------------------------------------------------------
