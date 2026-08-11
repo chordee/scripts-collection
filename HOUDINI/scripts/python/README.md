@@ -91,7 +91,7 @@ pytest tests/test_stitch_usd_clips.py
 | 檔案 | 覆蓋 | 環境 |
 |---|---|---|
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration | hython / plain Python |
-| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`dump_json` | hython only |
+| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關）、`dump_json` | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
 | `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
 | `test_colmap_points.py` | `read_points3d_binary_to_geo`（合成 COLMAP `.bin`、位置/色彩/error/track skip、`geo.clear()`、missing file、非 `.bin` 副檔名） | hython only |
@@ -284,6 +284,22 @@ get_all_layers_in_layer(
 走訪 layer 的所有 composition asset dependencies（sublayer / reference / payload，用 `Sdf.Layer.GetCompositionAssetDependencies`）並遞迴展開。Cycle detection key 用 `layer.realPath`（fallback `identifier`）統一比對，避免 root 用相對路徑開啟時繞過檢查。主 layer 開不起來時回空 list（`report_missing=True` 時回 `([], [])`）。
 
 `report_missing=True` 時回傳 `(found, missing)` tuple：`missing` 是打不開的依賴路徑（壞掉的 reference、被刪除的檔案等）；這些路徑仍然會出現在 `found` 裡（因為確實有被引用到），只是不會再往下遞迴展開。預設 `report_missing=False` 行為完全不變，只回傳 `found`。
+
+#### `get_all_shader_texture_paths_from_stage`
+
+```python
+get_all_shader_texture_paths_from_stage(
+    stage: Usd.Stage,
+    prim_path: Union[str, Sdf.Path] = '/',
+    report_missing: bool = False,
+) -> Union[List[str], Tuple[List[str], List[str]]]
+```
+
+走訪 `prim_path` 底下所有 `UsdShade.Shader` prim（不論有沒有被 material binding 綁定），收集每個 shader input 裡型別是 `Asset` / `AssetArray` 的值（不篩參數名稱，非 `inputs:file` 的自訂 shader 參數也抓得到）。`prim_path` 必須是絕對路徑，否則 `raise ValueError`（同 `get_all_clip_sequences_from_stage`）。
+
+**UDIM**：路徑帶 `<UDIM>` token（例如 `diffuse.<UDIM>.exr`）時，因為 resolver 不會展開 token，`resolvedPath` 一定是空的；這種路徑會被辨識出來、以原始 template 字串回傳，不會被濾掉也不會被誤判成 `missing`。不做 tile 展開（不會去 glob `1001`/`1002`... 等實際檔案）。
+
+`report_missing=True` 時回傳 `(found, missing)`：`missing` 是解析失敗、且不是 UDIM template 的原始 asset path。跟 `get_all_layers_in_layer` 不同的是，這裡的 `missing` 路徑**不會**同時出現在 `found` 裡（沒有 UDIM 的不可解析貼圖路徑沒有意義上的「找到」）。
 
 #### `dump_json`
 
