@@ -377,6 +377,54 @@ def test_get_all_shader_texture_paths_from_stage_rejects_relative_prim_path():
         get_all_shader_texture_paths_from_stage(stage, "Looks")
 
 
+def test_get_all_shader_texture_paths_from_stage_udim_template_in_default_result():
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(
+        Sdf.AssetPath("textures/diffuse.<UDIM>.exr")
+    )
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert any("<UDIM>" in p for p in paths)
+
+
+def test_get_all_shader_texture_paths_from_stage_udim_not_in_missing():
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(
+        Sdf.AssetPath("textures/diffuse.<UDIM>.exr")
+    )
+
+    found, missing = get_all_shader_texture_paths_from_stage(stage, report_missing=True)
+    assert any("<UDIM>" in p for p in found)
+    assert missing == []
+
+
+def test_get_all_shader_texture_paths_from_stage_reports_broken_non_udim_path(tmp_path):
+    broken = str(tmp_path / "does_not_exist.exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(broken))
+
+    found, missing = get_all_shader_texture_paths_from_stage(stage, report_missing=True)
+    assert found == []
+    assert any("does_not_exist.exr" in m for m in missing)
+
+
+def test_get_all_shader_texture_paths_from_stage_missing_default_off(tmp_path):
+    """When report_missing=False (default), a broken path contributes nothing
+    (not resolved, and there's no missing list to inspect) — the return type
+    stays a plain list.
+    """
+    broken = str(tmp_path / "does_not_exist.exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(broken))
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert paths == []
+
+
 # ---------------------------------------------------------------------------
 # get_all_clip_sequences_from_stage: prim_path validation
 # ---------------------------------------------------------------------------
