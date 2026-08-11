@@ -10,3 +10,6 @@ __pycache__/
 **/*.pyc
 backup/
 **/backup/
+
+# plan-mode / brainstorming-skill output (specs, plans) — local only, never committed
+docs/superpowers/
