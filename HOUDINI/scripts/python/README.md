@@ -91,7 +91,7 @@ pytest tests/test_stitch_usd_clips.py
 | 檔案 | 覆蓋 | 環境 |
 |---|---|---|
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration | hython / plain Python |
-| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關）、`dump_json` | hython only |
+| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`dump_json` | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
 | `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
 | `test_colmap_points.py` | `read_points3d_binary_to_geo`（合成 COLMAP `.bin`、位置/色彩/error/track skip、`geo.clear()`、missing file、非 `.bin` 副檔名） | hython only |
@@ -259,7 +259,7 @@ get_all_asset_paths_from_stage(
 ) -> List[str]
 ```
 
-從 `prim_path` 開始用 `Usd.PrimRange` traverse，對每個 prim 呼叫 `get_all_asset_paths_from_prim` 並 union。`prim_path` 不存在時回空 list。
+從 `prim_path` 開始用 `Usd.PrimRange` traverse，對每個 prim 呼叫 `get_all_asset_paths_from_prim` 並 union。`prim_path` 必須是絕對路徑（`Sdf.Path(prim_path).IsAbsolutePath()`），否則 `raise ValueError`——`Usd.Stage.GetPrimAtPath` 對相對路徑會回傳 invalid prim 而不是報錯，若不擋下來會靜默回傳空 list。
 
 #### `get_all_clip_sequences_from_stage`
 

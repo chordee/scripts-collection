@@ -129,6 +129,12 @@ def test_get_all_asset_paths_from_stage_walks_children(tmp_path):
     assert len(paths) == 1
 
 
+def test_get_all_asset_paths_from_stage_rejects_relative_prim_path():
+    stage = Usd.Stage.CreateInMemory()
+    with pytest.raises(ValueError):
+        get_all_asset_paths_from_stage(stage, "Looks")
+
+
 def test_get_all_asset_paths_from_prim_drops_udim_template():
     """Existing (pre-shader-helper) behavior: a <UDIM> templated path has no
     resolvedPath, so it is silently excluded — this must stay true after
@@ -369,6 +375,40 @@ def test_get_all_shader_texture_paths_from_stage_includes_unbound_orphan_shader(
 
     paths = get_all_shader_texture_paths_from_stage(stage)
     assert len(paths) == 1
+
+
+def test_get_all_shader_texture_paths_from_stage_finds_asset_array_input(tmp_path):
+    target1 = tmp_path / "diffuse.exr"
+    target2 = tmp_path / "normal.exr"
+    target1.write_text("fake exr")
+    target2.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    shader.CreateInput("files", Sdf.ValueTypeNames.AssetArray).Set(
+        [Sdf.AssetPath(str(target1)), Sdf.AssetPath(str(target2))]
+    )
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 2
+    assert any(p.endswith("diffuse.exr") for p in paths)
+    assert any(p.endswith("normal.exr") for p in paths)
+
+
+def test_get_all_shader_texture_paths_from_stage_finds_time_sampled_input(tmp_path):
+    target1 = tmp_path / "frame1.exr"
+    target2 = tmp_path / "frame2.exr"
+    target1.write_text("fake exr")
+    target2.write_text("fake exr")
+    stage = Usd.Stage.CreateInMemory()
+    shader = UsdShade.Shader.Define(stage, "/Looks/mat/Texture")
+    file_input = shader.CreateInput("file", Sdf.ValueTypeNames.Asset)
+    file_input.GetAttr().Set(Sdf.AssetPath(str(target1)), 1.0)
+    file_input.GetAttr().Set(Sdf.AssetPath(str(target2)), 2.0)
+
+    paths = get_all_shader_texture_paths_from_stage(stage)
+    assert len(paths) == 2
+    assert any(p.endswith("frame1.exr") for p in paths)
+    assert any(p.endswith("frame2.exr") for p in paths)
 
 
 def test_get_all_shader_texture_paths_from_stage_rejects_relative_prim_path():
