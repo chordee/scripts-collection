@@ -304,6 +304,49 @@ def get_all_clip_sequences_from_stage(
     return list(set(sequences))
 
 
+def get_all_shader_texture_paths_from_stage(
+    stage: Usd.Stage,
+    prim_path: Union[str, Sdf.Path] = '/',
+    report_missing: bool = False,
+) -> Union[List[str], Tuple[List[str], List[str]]]:
+    """Collect Asset/AssetArray-valued shader inputs from every UsdShade.Shader
+    prim under prim_path, regardless of material binding.
+
+    UDIM-templated paths (containing "<UDIM>") are returned as their literal
+    templated string, not expanded to individual tiles. If report_missing is
+    True, returns (found, missing) instead, where missing lists authored
+    asset paths that failed to resolve (UDIM templates are never "missing").
+    """
+    prim_path = Sdf.Path(prim_path)
+    if not prim_path.IsAbsolutePath():
+        raise ValueError(f"prim_path must be an absolute path, got {prim_path!r}")
+
+    asset_types = {Sdf.ValueTypeNames.Asset, Sdf.ValueTypeNames.AssetArray}
+    found: List[str] = []
+    missing: List[str] = []
+    missing_out = missing if report_missing else None
+
+    start_prim = stage.GetPrimAtPath(prim_path)
+    for prim in Usd.PrimRange(start_prim):
+        shader = UsdShade.Shader(prim)
+        if not shader:
+            continue
+        for shader_input in shader.GetInputs():
+            attr = shader_input.GetAttr()
+            if attr.GetTypeName() not in asset_types:
+                continue
+            timesamples = attr.GetTimeSamples()
+            if timesamples:
+                for t in timesamples:
+                    found.extend(_asset_paths_from_value(attr.Get(t), missing_out, udim_aware=True))
+            else:
+                found.extend(_asset_paths_from_value(attr.Get(), missing_out, udim_aware=True))
+
+    if report_missing:
+        return list(set(found)), list(set(missing))
+    return list(set(found))
+
+
 # ---------------------------------------------------------------------------
 # USD layer traversal
 # ---------------------------------------------------------------------------
