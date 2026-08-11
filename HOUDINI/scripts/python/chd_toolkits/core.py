@@ -178,6 +178,19 @@ def get_material_from_prim(prim: Usd.Prim) -> Optional[UsdShade.Material]:
 _UDIM_TOKEN = '<UDIM>'
 
 
+def _require_absolute_prim_path(prim_path: Union[str, Sdf.Path]) -> Sdf.Path:
+    """Normalize prim_path to Sdf.Path and reject non-absolute paths.
+
+    A relative prim_path makes Usd.Stage.GetPrimAtPath() return an invalid
+    prim, which silently walks zero prims instead of raising - fail loudly
+    instead of returning a misleading empty result.
+    """
+    prim_path = Sdf.Path(prim_path)
+    if not prim_path.IsAbsolutePath():
+        raise ValueError(f"prim_path must be an absolute path, got {prim_path!r}")
+    return prim_path
+
+
 def _resolved_asset_path(item, missing_out: Optional[List[str]], udim_aware: bool) -> Optional[str]:
     """Resolve one Sdf.AssetPath. UDIM-templated paths (containing "<UDIM>")
     never have a resolvedPath (the resolver does not expand the token), so
@@ -275,6 +288,7 @@ def get_all_asset_paths_from_stage(
     prim_path: Union[str, Sdf.Path] = '/',
 ) -> List[str]:
     """Walk the stage from prim_path and collect all asset attribute values."""
+    prim_path = _require_absolute_prim_path(prim_path)
     asset_paths: List[str] = []
     start_prim = stage.GetPrimAtPath(prim_path)
     for prim in Usd.PrimRange(start_prim):
@@ -287,12 +301,7 @@ def get_all_clip_sequences_from_stage(
     prim_path: Union[str, Sdf.Path] = '/',
 ) -> List[str]:
     """Walk the stage and union all clipSet asset paths."""
-    prim_path = Sdf.Path(prim_path)
-    if not prim_path.IsAbsolutePath():
-        # A relative prim_path makes GetPrimAtPath() return an invalid prim,
-        # which silently walks zero prims instead of raising - fail loudly
-        # instead of returning a misleading empty result.
-        raise ValueError(f"prim_path must be an absolute path, got {prim_path!r}")
+    prim_path = _require_absolute_prim_path(prim_path)
 
     sequences: List[str] = []
     start_prim = stage.GetPrimAtPath(prim_path)
@@ -317,9 +326,7 @@ def get_all_shader_texture_paths_from_stage(
     True, returns (found, missing) instead, where missing lists authored
     asset paths that failed to resolve (UDIM templates are never "missing").
     """
-    prim_path = Sdf.Path(prim_path)
-    if not prim_path.IsAbsolutePath():
-        raise ValueError(f"prim_path must be an absolute path, got {prim_path!r}")
+    prim_path = _require_absolute_prim_path(prim_path)
 
     asset_types = {Sdf.ValueTypeNames.Asset, Sdf.ValueTypeNames.AssetArray}
     found: List[str] = []
