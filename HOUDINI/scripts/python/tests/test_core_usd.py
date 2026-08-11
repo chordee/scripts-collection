@@ -15,6 +15,7 @@ from pxr import Sdf, Usd, UsdGeom, UsdShade
 
 from chd_toolkits.core import (
     compute_prim_scale,
+    dump_json,
     get_all_asset_paths_from_prim,
     get_all_asset_paths_from_stage,
     get_all_clip_sequences_from_prim,
@@ -248,3 +249,83 @@ def test_get_all_layers_in_layer_handles_cycle(tmp_path):
     # Must terminate; b is found; a (the root layer) is not returned.
     assert any("b.usda" in d for d in deps)
     assert not any("a.usda" in d for d in deps)
+
+
+def test_get_all_layers_in_layer_report_missing_false_returns_plain_list(tmp_path):
+    sub_path = str(tmp_path / "sub.usda")
+    Usd.Stage.CreateNew(sub_path).Save()
+    root_path = str(tmp_path / "root.usda")
+    root_stage = Usd.Stage.CreateNew(root_path)
+    root_stage.GetRootLayer().subLayerPaths.append("./sub.usda")
+    root_stage.Save()
+
+    deps = get_all_layers_in_layer(root_path)
+    assert isinstance(deps, list)
+    assert any("sub.usda" in d for d in deps)
+
+
+def test_get_all_layers_in_layer_report_missing_true_flags_broken_sublayer(tmp_path):
+    root_path = str(tmp_path / "root.usda")
+    root_stage = Usd.Stage.CreateNew(root_path)
+    root_stage.GetRootLayer().subLayerPaths.append("./missing.usda")
+    root_stage.Save()
+
+    found, missing = get_all_layers_in_layer(root_path, report_missing=True)
+    assert any("missing.usda" in d for d in missing)
+    # A missing dependency is still reported as "found" (it was referenced),
+    # just also flagged as unopenable.
+    assert any("missing.usda" in d for d in found)
+
+
+def test_get_all_layers_in_layer_report_missing_true_no_missing_when_all_resolve(tmp_path):
+    sub_path = str(tmp_path / "sub.usda")
+    Usd.Stage.CreateNew(sub_path).Save()
+    root_path = str(tmp_path / "root.usda")
+    root_stage = Usd.Stage.CreateNew(root_path)
+    root_stage.GetRootLayer().subLayerPaths.append("./sub.usda")
+    root_stage.Save()
+
+    found, missing = get_all_layers_in_layer(root_path, report_missing=True)
+    assert any("sub.usda" in d for d in found)
+    assert missing == []
+
+
+# ---------------------------------------------------------------------------
+# get_all_clip_sequences_from_stage: prim_path validation
+# ---------------------------------------------------------------------------
+
+
+def test_get_all_clip_sequences_from_stage_rejects_relative_prim_path():
+    stage = Usd.Stage.CreateInMemory()
+    with pytest.raises(ValueError):
+        get_all_clip_sequences_from_stage(stage, "Scope")
+
+
+def test_get_all_clip_sequences_from_stage_accepts_sdf_path(tmp_path):
+    dummy = tmp_path / "dummy.usda"
+    dummy.write_text("#usda 1.0\n")
+    stage = Usd.Stage.CreateInMemory()
+    prim = stage.DefinePrim("/Scope", "Xform")
+    Usd.ClipsAPI(prim).SetClipAssetPaths([Sdf.AssetPath(str(dummy))], "default")
+
+    paths = get_all_clip_sequences_from_stage(stage, Sdf.Path("/Scope"))
+    assert len(paths) == 1
+
+
+# ---------------------------------------------------------------------------
+# dump_json
+# ---------------------------------------------------------------------------
+
+
+def test_dump_json_returns_string_without_path():
+    result = dump_json(["a.usda", "b.usda"])
+    assert isinstance(result, str)
+    assert "a.usda" in result
+
+
+def test_dump_json_writes_file_and_returns_none(tmp_path):
+    out_path = tmp_path / "deps.json"
+    result = dump_json({"found": ["a.usda"], "missing": []}, out_path)
+    assert result is None
+    assert out_path.exists()
+    assert "a.usda" in out_path.read_text(encoding="utf-8")
