@@ -75,11 +75,12 @@ def read_points3d_binary_to_geo(
 
                 record = fid.read(_POINT_RECORD_SIZE)
                 if len(record) < _POINT_RECORD_SIZE:
-                    print(
-                        f"Error at point {i}: Expected {_POINT_RECORD_SIZE} bytes, "
-                        f"got {len(record)}"
+                    geo.clear()
+                    raise ValueError(
+                        f"Truncated file: header declares {num_points} point(s) but "
+                        f"point {i} is incomplete ({len(record)}/{_POINT_RECORD_SIZE} "
+                        "bytes) — the file was likely cut off during transfer."
                     )
-                    break
 
                 data = struct.unpack(_POINT_RECORD_FMT, record)
                 # data[0] is point3D_id (unused).
@@ -89,7 +90,12 @@ def read_points3d_binary_to_geo(
 
                 track_len_data = fid.read(8)
                 if len(track_len_data) < 8:
-                    break
+                    geo.clear()
+                    raise ValueError(
+                        f"Truncated file: header declares {num_points} point(s) but "
+                        f"the track-length field for point {i} is incomplete — the "
+                        "file was likely cut off during transfer."
+                    )
                 track_length = struct.unpack("<Q", track_len_data)[0]
                 # Each track element = 2 * uint32 = 8 bytes; skip from current position.
                 fid.seek(track_length * 8, 1)
