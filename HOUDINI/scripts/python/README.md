@@ -91,7 +91,7 @@ pytest tests/test_stitch_usd_clips.py
 | 檔案 | 覆蓋 | 環境 |
 |---|---|---|
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
-| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`dump_json` | hython only |
+| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json` | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
 | `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
 | `test_colmap_points.py` | `read_points3d_binary_to_geo`（合成 COLMAP `.bin`、位置/色彩/error/track skip、`geo.clear()`、missing file、非 `.bin` 副檔名、截斷檔案 raise 且清空 geometry） | hython only |
@@ -300,6 +300,22 @@ get_all_shader_texture_paths_from_stage(
 **UDIM**：路徑帶 `<UDIM>` token（例如 `diffuse.<UDIM>.exr`）時，因為 resolver 不會展開 token，`resolvedPath` 一定是空的；這種路徑會被辨識出來、以原始 template 字串回傳，不會被濾掉也不會被誤判成 `missing`。不做 tile 展開（不會去 glob `1001`/`1002`... 等實際檔案）。
 
 `report_missing=True` 時回傳 `(found, missing)`：`missing` 是解析失敗、且不是 UDIM template 的原始 asset path。跟 `get_all_layers_in_layer` 不同的是，這裡的 `missing` 路徑**不會**同時出現在 `found` 裡（沒有 UDIM 的不可解析貼圖路徑沒有意義上的「找到」）。
+
+#### `get_all_vdb_paths_from_stage`
+
+```python
+get_all_vdb_paths_from_stage(
+    stage: Usd.Stage,
+    prim_path: Union[str, Sdf.Path] = '/',
+    report_missing: bool = False,
+) -> Union[List[str], Tuple[List[str], List[str]]]
+```
+
+走訪 `prim_path` 底下所有 `UsdVol.OpenVDBAsset` prim，讀取 `filePath` 屬性。只認 `OpenVDBAsset`，不含 `UsdVol.Field3DAsset`（`.f3d` 格式，跟 `.vdb` 無關，儘管共用 `UsdVol.FieldAsset` base schema）。`prim_path` 必須是絕對路徑，否則 `raise ValueError`（同 `get_all_clip_sequences_from_stage` / `get_all_shader_texture_paths_from_stage`）。
+
+**Time sample**：VDB 序列幾乎都是用 time sample 存每一幀不同的實際檔名（例如 `sim.0001.vdb`、`sim.0002.vdb`），不是單一 default 值，所以會遍歷 `attr.GetTimeSamples()` 全部時間點並聯集；沒有 time sample 時才 fallback 讀 default 值。不做 UDIM 判斷（VDB 檔名不會有 `<UDIM>` 這種 2D 貼圖 tiling token）。
+
+`report_missing=True` 時回傳 `(found, missing)`：解析失敗的路徑只會出現在 `missing`，不會同時出現在 `found`（跟 `get_all_shader_texture_paths_from_stage` 同樣的 found/missing 不重疊語意，跟 `get_all_layers_in_layer` 不同）。
 
 #### `dump_json`
 
