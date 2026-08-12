@@ -119,3 +119,36 @@ def test_read_points3d_rejects_non_bin_extension(tmp_path):
     node = MockSopNode()
     result = read_points3d_binary_to_geo(str(bad), node)
     assert result is None
+
+
+def test_read_points3d_truncated_record_raises(tmp_path):
+    """A file whose header overstates the point count (cut off mid-transfer)
+    must raise, not silently return a partial point count as if it succeeded.
+    """
+    bin_path = tmp_path / "points3D.bin"
+    with open(bin_path, "wb") as fid:
+        fid.write(struct.pack("<Q", 5))  # header claims 5 points
+        for pid in range(2):
+            fid.write(struct.pack("<QdddBBBd", pid, 0.0, 0.0, 0.0, 0, 0, 0, 0.0))
+            fid.write(struct.pack("<Q", 0))
+        fid.write(struct.pack("<Qdd", 99, 1.0, 2.0))  # incomplete 3rd record
+
+    node = MockSopNode()
+    with pytest.raises(ValueError, match="Truncated"):
+        read_points3d_binary_to_geo(str(bin_path), node)
+
+    # Geometry must be left empty, not half-populated with the 2 valid points.
+    assert len(node.geometry().points()) == 0
+
+
+def test_read_points3d_truncated_track_length_raises(tmp_path):
+    bin_path = tmp_path / "points3D.bin"
+    with open(bin_path, "wb") as fid:
+        fid.write(struct.pack("<Q", 2))  # header claims 2 points
+        fid.write(struct.pack("<QdddBBBd", 1, 0.0, 0.0, 0.0, 0, 0, 0, 0.0))
+        fid.write(b"\x00\x00\x00")  # incomplete track-length field (needs 8 bytes)
+
+    node = MockSopNode()
+    with pytest.raises(ValueError, match="Truncated"):
+        read_points3d_binary_to_geo(str(bin_path), node)
+    assert len(node.geometry().points()) == 0

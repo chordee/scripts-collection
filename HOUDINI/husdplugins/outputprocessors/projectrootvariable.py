@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 
 import hou
@@ -8,6 +9,10 @@ import husd.outputprocessor as base
 VARIABLE_NAME = 'PROJECT_ROOT'
 PARAM_NAME = 'projectrootvariable_project_root'
 CASE_INSENSITIVE = sys.platform.startswith('win')
+# A bare Windows drive letter ("C:", from _normalize("C:\\") / "C:/" / "C:")
+# is a filesystem root just like "/" on POSIX, but rstrip('/') never empties
+# it out the way it does "/" -> "", so it needs its own check.
+_WINDOWS_DRIVE_ROOT_RE = re.compile(r'^[A-Za-z]:$')
 
 
 def _normalize(path):
@@ -65,7 +70,7 @@ class ProjectRootVariable(base.OutputProcessor):
             raise ValueError('Project Root must be an absolute path')
 
         project_root = _normalize(expanded)
-        if not project_root:
+        if not project_root or _WINDOWS_DRIVE_ROOT_RE.match(project_root):
             raise ValueError('Filesystem root cannot be used as Project Root')
 
         self.project_root = project_root

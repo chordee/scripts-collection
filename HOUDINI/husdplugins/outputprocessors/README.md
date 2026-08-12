@@ -76,7 +76,7 @@ Class 需繼承 `husd.outputprocessor.OutputProcessor`，並覆寫以下方法�
 
 #### 參數
 
-- **Project Root**（字串）：可輸入絕對路徑或含 Houdini 變數（`$JOB`、`$HIP`…），會以 `hou.text.expandString` 展開後再做比對。空字串時整個 processor 無動作。
+- **Project Root**（字串）：可輸入絕對路徑或含 Houdini 變數（`$JOB`、`$HIP`…），會以 `hou.text.expandString` 展開後再做比對。空字串時整個 processor 無動作。填入檔案系統根目錄（如 Linux `/`、Windows 磁碟機根目錄 `C:\`）會 `raise ValueError`。
 
 #### 行為
 

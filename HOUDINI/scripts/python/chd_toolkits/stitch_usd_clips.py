@@ -56,6 +56,15 @@ def build_clip_frame_lists(
     Returns (scene_frame_list, file_frame_list) with equal length.
     When loop=True, the file list is repeated to cover the full scene range.
     """
+    if frame_range[1] < frame_range[0]:
+        raise ValueError(
+            f"frame_range end ({frame_range[1]}) must be >= start ({frame_range[0]})"
+        )
+    if scene_range[1] < scene_range[0]:
+        raise ValueError(
+            f"scene_range end ({scene_range[1]}) must be >= start ({scene_range[0]})"
+        )
+
     file_frames = list(range(frame_range[0], frame_range[1] + 1))
     scene_frames = list(range(scene_range[0], scene_range[1] + 1))
 
@@ -178,7 +187,12 @@ def generate_topology(
         for child in src_prim.GetChildren():
             copy_prim(child, dst_stage, dst_path)
 
-    copy_prim(src_root, topo_stage, Sdf.Path.absoluteRootPath)
+    # Start at clip_primpath's parent so the copy lands at the same absolute
+    # path as the source (e.g. /World/Sim), not collapsed to its leaf name
+    # (/Sim) under the topology stage's root — the topology layer is
+    # sublayered into the output stage, so path mismatches mean it silently
+    # defines an unrelated orphan prim instead of the real clip-attached one.
+    copy_prim(src_root, topo_stage, Sdf.Path(clip_primpath).GetParentPath())
 
     # Set defaultPrim so future references do not produce warnings
     topo_stage.SetDefaultPrim(topo_stage.GetPrimAtPath(src_root.GetPath()))
@@ -226,7 +240,10 @@ def generate_manifest(
         for child in src_prim.GetChildren():
             scan_prim(child, dst_stage, dst_path)
 
-    scan_prim(src_root, mfst_stage, Sdf.Path.absoluteRootPath)
+    # Same reasoning as generate_topology: preserve the source's absolute
+    # path so the manifest lands on the same prim the output stage attaches
+    # clips to, instead of collapsing to a leaf-name orphan.
+    scan_prim(src_root, mfst_stage, Sdf.Path(clip_primpath).GetParentPath())
 
     mfst_stage.GetRootLayer().Save()
     print(f"[INFO] Manifest written → {manifest_path}  ({animated_count} animated attribute(s))")
@@ -327,7 +344,7 @@ def stitch_clips(
 
     # --- 4. Auto-detect animated child prims ---
     if auto_detect_prim:
-        target_primpaths = find_all_animated_prims(probe_path, primpath)
+        target_primpaths = find_all_animated_prims(probe_path, clip_primpath)
     else:
         target_primpaths = [clip_primpath]
 
@@ -338,13 +355,13 @@ def stitch_clips(
     topology_path = os.path.join(out_dir, f"{out_stem}.topology{out_ext}")
     manifest_path = os.path.join(out_dir, f"{out_stem}.manifest{out_ext}")
 
-    # --- 6. Generate topology (from root primpath, preserving full prim structure) ---
+    # --- 6. Generate topology (reads clip_primpath in the source clip files) ---
     if gen_topology:
-        generate_topology(probe_path, primpath, topology_path)
+        generate_topology(probe_path, clip_primpath, topology_path)
 
-    # --- 7. Generate manifest (scanning each animated prim) ---
+    # --- 7. Generate manifest (reads clip_primpath in the source clip files) ---
     if gen_manifest:
-        generate_manifest(probe_path, primpath, manifest_path)
+        generate_manifest(probe_path, clip_primpath, manifest_path)
 
     # --- 8. Create output stage ---
     os.makedirs(out_dir, exist_ok=True)
@@ -375,8 +392,8 @@ def stitch_clips(
     stage.SetDefaultPrim(top_prim)
     print(f"[INFO] defaultPrim       : {top_name}")
 
-    # --- 10. Set Clips API (attached to root prim; SetClipPrimPath uses primpath
-    #         so all child prims are covered automatically) ---
+    # --- 10. Set Clips API (attached at primpath on the output stage; reads
+    #         from clip_primpath inside each clip file) ---
     asset_paths = [Sdf.AssetPath(p) for p in filepaths]
     # times: list of (scene_time, file_time) pairs
     # USD selects the asset file based on where scene_time falls in this mapping
@@ -384,9 +401,11 @@ def stitch_clips(
 
     clip_api = Usd.ClipsAPI(root_prim)
     clip_api.SetClipAssetPaths(asset_paths, clip_set)
-    # primPath = primpath means USD reads from that prim in each clip file,
-    # so /Geometry/mesh_0, mesh_1, etc. are all resolved correctly
-    clip_api.SetClipPrimPath(primpath, clip_set)
+    # clipPrimPath is the path *inside each clip file* USD reads data from;
+    # it defaults to primpath (clip_primpath is normalized to primpath above
+    # when not explicitly given) but can differ when the source clip files
+    # store data at a different path than where clips are attached here.
+    clip_api.SetClipPrimPath(clip_primpath, clip_set)
     clip_api.SetClipTimes(times, clip_set)
     # active: (scene_time, assetPaths_index) — explicitly maps each scene frame to a file
     frame_start = frame_range[0]
@@ -410,7 +429,7 @@ def stitch_clips(
     print("\n=== Clip Settings Summary ===")
     print(f"  Clip Set           : {clip_set}")
     print(f"  Root Prim          : {primpath}")
-    print(f"  Clip PrimPath      : {primpath} (all child prims covered automatically)")
+    print(f"  Clip PrimPath      : {clip_primpath} (all child prims covered automatically)")
     print(f"  Animated Prims     : {len(target_primpaths)}")
     for tp in target_primpaths:
         print(f"                       {tp}")
