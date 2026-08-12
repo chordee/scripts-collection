@@ -90,11 +90,11 @@ pytest tests/test_stitch_usd_clips.py
 
 | 檔案 | 覆蓋 | 環境 |
 |---|---|---|
-| `test_stitch_usd_clips.py` | 全部公開函式 + integration | hython / plain Python |
+| `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
 | `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`dump_json` | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
 | `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
-| `test_colmap_points.py` | `read_points3d_binary_to_geo`（合成 COLMAP `.bin`、位置/色彩/error/track skip、`geo.clear()`、missing file、非 `.bin` 副檔名） | hython only |
+| `test_colmap_points.py` | `read_points3d_binary_to_geo`（合成 COLMAP `.bin`、位置/色彩/error/track skip、`geo.clear()`、missing file、非 `.bin` 副檔名、截斷檔案 raise 且清空 geometry） | hython only |
 | `test_nerfstudio_cam.py` | `create_animated_camera`（節點建立、custom subnet、focal length 計算、解析度、6 軌 keyframe、playbar range、缺檔/空 frames 回 None、destroy+rebuild） | hython only |
 
 `conftest.py` 的 autouse fixture 在每個測試後自動 `hou.hipFile.clear()`，避免 `nerfstudio_cam` 建的 DAG / playbar 狀態污染下個測試。
@@ -333,7 +333,8 @@ read_points3d_binary_to_geo(
 
 - `path_to_model_file`：`points3D.bin` 路徑。非 `.bin` 副檔名或檔案不存在會跳訊息並回 `None`。
 - `parent_node`：Python SOP，其 `geometry()` 是接收點雲的容器。
-- 回傳：實際寫入的點數；失敗回 `None`。
+- 回傳：實際寫入的點數；檔案缺失或副檔名不符回 `None`。
+- 檔案內容被截斷（header 宣告的點數比實際能讀到的多）會 `raise ValueError` 並清空 geometry，不會回傳部分成功的點數。
 
 座標系統保持 COLMAP 原樣（Z-up）；要在 Houdini Y-up 顯示自行接 Transform SOP。
 
@@ -425,6 +426,7 @@ stitch_clips(
 | `fps` | `None` | 輸出 stage 的 FPS；`None` 自動從 probe frame 偵測 |
 
 失敗條件：
+- `frame_range` 或 `scene_range` 的 end < start → `ValueError`
 - `probe_frame` 不在 `frame_range` 內 → `ValueError`
 - `probe_frame` 對應檔案不存在 → `FileNotFoundError`
 - `strict=True` 且任一 frame 檔案缺失 → `FileNotFoundError`
