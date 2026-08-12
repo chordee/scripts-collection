@@ -74,6 +74,24 @@ def test_build_clip_frame_lists_no_loop_truncates_to_files():
     assert files == [1, 2, 3]
 
 
+def test_build_clip_frame_lists_rejects_reversed_frame_range():
+    with pytest.raises(ValueError):
+        build_clip_frame_lists((10, 5), (1, 20), False)
+
+
+def test_build_clip_frame_lists_rejects_reversed_scene_range():
+    with pytest.raises(ValueError):
+        build_clip_frame_lists((1, 5), (20, 10), False)
+
+
+def test_build_clip_frame_lists_rejects_reversed_frame_range_with_loop():
+    """The reversed-range check must run before the loop math, which
+    otherwise divides by len(file_frames) == 0 for an empty frame_range.
+    """
+    with pytest.raises(ValueError):
+        build_clip_frame_lists((10, 5), (1, 20), True)
+
+
 # ---------------------------------------------------------------------------
 # validate_files
 # ---------------------------------------------------------------------------
@@ -105,12 +123,7 @@ def test_validate_files_missing_non_strict_returns_list(tmp_path, capsys):
 
 @pytest.fixture
 def animated_frame(tmp_path):
-    """A single USD file with /Geo Xform + animated translate.
-
-    Uses a top-level prim because ``generate_topology`` re-roots the copied
-    hierarchy under ``/`` using the source prim's leaf name; nested paths
-    like ``/World/Geo`` would round-trip to ``/Geo`` and confuse assertions.
-    """
+    """A single USD file with /Geo Xform + animated translate."""
     path = str(tmp_path / "frame_1.usda")
     stage = Usd.Stage.CreateNew(path)
     xform = UsdGeom.Xform.Define(stage, "/Geo")
@@ -118,6 +131,20 @@ def animated_frame(tmp_path):
     op.Set(time=1.0, value=(1.0, 0, 0))
     op.Set(time=2.0, value=(2.0, 0, 0))
     stage.SetDefaultPrim(xform.GetPrim())
+    stage.Save()
+    return path
+
+
+@pytest.fixture
+def nested_animated_frame(tmp_path):
+    """A single USD file with /World/Geo Xform + animated translate."""
+    path = str(tmp_path / "nested_frame_1.usda")
+    stage = Usd.Stage.CreateNew(path)
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+    op = xform.AddTranslateOp()
+    op.Set(time=1.0, value=(1.0, 0, 0))
+    op.Set(time=2.0, value=(2.0, 0, 0))
+    stage.SetDefaultPrim(stage.GetPrimAtPath("/World"))
     stage.Save()
     return path
 
@@ -148,6 +175,34 @@ def test_generate_manifest_writes_file(tmp_path, animated_frame):
     out = str(tmp_path / "manifest.usda")
     generate_manifest(animated_frame, "/Geo", out)
     assert os.path.exists(out)
+
+
+def test_generate_topology_preserves_nested_prim_hierarchy(tmp_path, nested_animated_frame):
+    """Regression: copy_prim used to re-root the copy under the topology
+    stage's absolute root using only the source prim's leaf name, so
+    /World/Geo became /Geo — an unrelated path once the topology layer was
+    sublayered into the output stage, and SetDefaultPrim silently no-opped
+    because /World/Geo never existed in the topology stage either.
+    """
+    out = str(tmp_path / "topology.usda")
+    generate_topology(nested_animated_frame, "/World/Geo", out)
+    stage = Usd.Stage.Open(out)
+
+    geo = stage.GetPrimAtPath("/World/Geo")
+    assert geo.IsValid()
+    assert not stage.GetPrimAtPath("/Geo").IsValid()
+
+    default = stage.GetDefaultPrim()
+    assert default.IsValid()
+    assert str(default.GetPath()) == "/World/Geo"
+
+
+def test_generate_manifest_preserves_nested_prim_hierarchy(tmp_path, nested_animated_frame):
+    out = str(tmp_path / "manifest.usda")
+    generate_manifest(nested_animated_frame, "/World/Geo", out)
+    stage = Usd.Stage.Open(out)
+    assert stage.GetPrimAtPath("/World/Geo").IsValid()
+    assert not stage.GetPrimAtPath("/Geo").IsValid()
 
 
 def test_find_all_animated_prims_finds_xform(animated_frame):
@@ -292,6 +347,65 @@ def test_stitch_clips_default_probe_missing_file_raises(tmp_path):
             output_path=str(tmp_path / "x.usda"),
             frame_range=(1, 3),
         )
+
+
+def test_stitch_clips_nested_primpath_resolves_animated_attribute(tmp_path, frame_sequence):
+    """Regression (end-to-end): a nested primpath like /World/Sim used to
+    produce a stitched stage whose xformOp:translate was never declared at
+    all, because the topology sublayer defined it at the wrong path.
+    """
+    out = str(tmp_path / "stitched.usda")
+    stitch_clips(
+        filepath_template=frame_sequence,
+        primpath="/World/Sim",
+        output_path=out,
+        frame_range=(1, 3),
+    )
+    stage = Usd.Stage.Open(out)
+    prim = stage.GetPrimAtPath("/World/Sim")
+    attr = prim.GetAttribute("xformOp:translate")
+    assert attr.IsValid()
+
+    stage.SetInterpolationType(Usd.InterpolationTypeHeld)
+    assert tuple(attr.Get(1.0)) == pytest.approx((1.0, 0.0, 0.0))
+    assert tuple(attr.Get(2.0)) == pytest.approx((2.0, 0.0, 0.0))
+    assert tuple(attr.Get(3.0)) == pytest.approx((3.0, 0.0, 0.0))
+
+    # The old bug also leaked a spurious /Sim orphan prim onto the output stage.
+    assert not stage.GetPrimAtPath("/Sim").IsValid()
+
+
+def test_stitch_clips_respects_distinct_clip_primpath(tmp_path):
+    """Regression: clip_primpath (the path *inside* each clip file) used to
+    have no effect — topology, manifest, and SetClipPrimPath all used
+    primpath (the destination path) instead, so a clip_primpath differing
+    from primpath silently produced clips metadata pointing at the wrong
+    in-file path.
+    """
+    template = str(tmp_path / "sim.{frame:04d}.usda")
+    for frame in (1, 2, 3):
+        path = template.format(frame=frame)
+        stage = Usd.Stage.CreateNew(path)
+        xform = UsdGeom.Xform.Define(stage, "/World/Sim")
+        op = xform.AddTranslateOp()
+        op.Set(time=float(frame), value=(float(frame), 0, 0))
+        stage.SetDefaultPrim(stage.GetPrimAtPath("/World"))
+        stage.GetRootLayer().Save()
+
+    out = str(tmp_path / "stitched.usda")
+    stitch_clips(
+        filepath_template=template,
+        primpath="/Dest",
+        clip_primpath="/World/Sim",
+        output_path=out,
+        frame_range=(1, 3),
+        auto_detect_prim=False,
+    )
+
+    stage = Usd.Stage.Open(out)
+    root = stage.GetPrimAtPath("/Dest")
+    clips_meta = dict(root.GetMetadata("clips"))
+    assert clips_meta["default"]["primPath"] == "/World/Sim"
 
 
 def test_stitch_clips_custom_clip_set(tmp_path, frame_sequence):
