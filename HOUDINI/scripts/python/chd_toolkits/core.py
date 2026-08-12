@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 
 import hou
-from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade, UsdVol
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +348,43 @@ def get_all_shader_texture_paths_from_stage(
                     found.extend(_asset_paths_from_value(attr.Get(t), missing_out, udim_aware=True))
             else:
                 found.extend(_asset_paths_from_value(attr.Get(), missing_out, udim_aware=True))
+
+    if report_missing:
+        return list(set(found)), list(set(missing))
+    return list(set(found))
+
+
+def get_all_vdb_paths_from_stage(
+    stage: Usd.Stage,
+    prim_path: Union[str, Sdf.Path] = '/',
+    report_missing: bool = False,
+) -> Union[List[str], Tuple[List[str], List[str]]]:
+    """Collect filePath values from every UsdVol.OpenVDBAsset prim under prim_path.
+
+    VDB caches are typically authored as a sequence with a distinct,
+    time-sampled filePath per frame rather than a single default value, so
+    every time sample is unioned into the result, not just the default.
+    """
+    prim_path = _require_absolute_prim_path(prim_path)
+
+    found: List[str] = []
+    missing: List[str] = []
+    missing_out = missing if report_missing else None
+
+    start_prim = stage.GetPrimAtPath(prim_path)
+    for prim in Usd.PrimRange(start_prim):
+        vdb = UsdVol.OpenVDBAsset(prim)
+        if not vdb:
+            continue
+        attr = vdb.GetFilePathAttr()
+        if not attr.IsValid():
+            continue
+        timesamples = attr.GetTimeSamples()
+        if timesamples:
+            for t in timesamples:
+                found.extend(_asset_paths_from_value(attr.Get(t), missing_out))
+        else:
+            found.extend(_asset_paths_from_value(attr.Get(), missing_out))
 
     if report_missing:
         return list(set(found)), list(set(missing))

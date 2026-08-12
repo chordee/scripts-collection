@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("hou")
 pytest.importorskip("pxr")
 
-from pxr import Sdf, Usd, UsdGeom, UsdShade
+from pxr import Sdf, Usd, UsdGeom, UsdShade, UsdVol
 
 from chd_toolkits.core import (
     compute_prim_scale,
@@ -22,6 +22,7 @@ from chd_toolkits.core import (
     get_all_clip_sequences_from_stage,
     get_all_layers_in_layer,
     get_all_shader_texture_paths_from_stage,
+    get_all_vdb_paths_from_stage,
     get_clip_names,
     get_clip_sequences_from_prim,
     get_material_from_prim,
@@ -462,6 +463,109 @@ def test_get_all_shader_texture_paths_from_stage_missing_default_off(tmp_path):
     shader.CreateInput("file", Sdf.ValueTypeNames.Asset).Set(Sdf.AssetPath(broken))
 
     paths = get_all_shader_texture_paths_from_stage(stage)
+    assert paths == []
+
+
+# ---------------------------------------------------------------------------
+# get_all_vdb_paths_from_stage
+# ---------------------------------------------------------------------------
+
+
+def test_get_all_vdb_paths_from_stage_finds_single_time_sample(tmp_path):
+    target = tmp_path / "sim.0001.vdb"
+    target.write_text("fake vdb")
+    stage = Usd.Stage.CreateInMemory()
+    vdb = UsdVol.OpenVDBAsset.Define(stage, "/Volume/density")
+    vdb.GetFilePathAttr().Set(Sdf.AssetPath(str(target)), 1.0)
+
+    paths = get_all_vdb_paths_from_stage(stage)
+    assert len(paths) == 1
+    assert paths[0].endswith("sim.0001.vdb")
+
+
+def test_get_all_vdb_paths_from_stage_unions_multiple_time_samples(tmp_path):
+    targets = []
+    for frame in (1, 2, 3):
+        target = tmp_path / f"sim.{frame:04d}.vdb"
+        target.write_text("fake vdb")
+        targets.append(target)
+    stage = Usd.Stage.CreateInMemory()
+    vdb = UsdVol.OpenVDBAsset.Define(stage, "/Volume/density")
+    attr = vdb.GetFilePathAttr()
+    for frame, target in zip((1, 2, 3), targets):
+        attr.Set(Sdf.AssetPath(str(target)), float(frame))
+
+    paths = get_all_vdb_paths_from_stage(stage)
+    assert len(paths) == 3
+    for target in targets:
+        assert any(p.endswith(target.name) for p in paths)
+
+
+def test_get_all_vdb_paths_from_stage_falls_back_to_default_value(tmp_path):
+    target = tmp_path / "static.vdb"
+    target.write_text("fake vdb")
+    stage = Usd.Stage.CreateInMemory()
+    vdb = UsdVol.OpenVDBAsset.Define(stage, "/Volume/density")
+    vdb.GetFilePathAttr().Set(Sdf.AssetPath(str(target)))  # no time code -> default value
+
+    paths = get_all_vdb_paths_from_stage(stage)
+    assert len(paths) == 1
+    assert paths[0].endswith("static.vdb")
+
+
+def test_get_all_vdb_paths_from_stage_ignores_field3d_asset(tmp_path):
+    target = tmp_path / "sim.f3d"
+    target.write_text("fake field3d")
+    stage = Usd.Stage.CreateInMemory()
+    field3d = UsdVol.Field3DAsset.Define(stage, "/Volume/density")
+    field3d.GetFilePathAttr().Set(Sdf.AssetPath(str(target)), 1.0)
+
+    paths = get_all_vdb_paths_from_stage(stage)
+    assert paths == []
+
+
+def test_get_all_vdb_paths_from_stage_ignores_unrelated_prims(tmp_path):
+    target = tmp_path / "sim.vdb"
+    target.write_text("fake vdb")
+    stage = Usd.Stage.CreateInMemory()
+    prim = stage.DefinePrim("/X", "Xform")
+    attr = prim.CreateAttribute("notAVdbFilePath", Sdf.ValueTypeNames.Asset)
+    attr.Set(Sdf.AssetPath(str(target)))
+
+    paths = get_all_vdb_paths_from_stage(stage)
+    assert paths == []
+
+
+def test_get_all_vdb_paths_from_stage_rejects_relative_prim_path():
+    stage = Usd.Stage.CreateInMemory()
+    with pytest.raises(ValueError):
+        get_all_vdb_paths_from_stage(stage, "Volume")
+
+
+def test_get_all_vdb_paths_from_stage_report_missing_separates_found_and_missing(tmp_path):
+    resolvable = tmp_path / "sim.0001.vdb"
+    resolvable.write_text("fake vdb")
+    broken = str(tmp_path / "does_not_exist.vdb")
+
+    stage = Usd.Stage.CreateInMemory()
+    vdb = UsdVol.OpenVDBAsset.Define(stage, "/Volume/density")
+    attr = vdb.GetFilePathAttr()
+    attr.Set(Sdf.AssetPath(str(resolvable)), 1.0)
+    attr.Set(Sdf.AssetPath(broken), 2.0)
+
+    found, missing = get_all_vdb_paths_from_stage(stage, report_missing=True)
+    assert any(p.endswith("sim.0001.vdb") for p in found)
+    assert not any("does_not_exist.vdb" in p for p in found)
+    assert any("does_not_exist.vdb" in m for m in missing)
+
+
+def test_get_all_vdb_paths_from_stage_missing_default_off(tmp_path):
+    broken = str(tmp_path / "does_not_exist.vdb")
+    stage = Usd.Stage.CreateInMemory()
+    vdb = UsdVol.OpenVDBAsset.Define(stage, "/Volume/density")
+    vdb.GetFilePathAttr().Set(Sdf.AssetPath(broken), 1.0)
+
+    paths = get_all_vdb_paths_from_stage(stage)
     assert paths == []
 
 
