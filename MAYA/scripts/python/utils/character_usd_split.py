@@ -178,8 +178,14 @@ def _write_skel_layer(
     skeleton/blendshape relationships, all copied verbatim from ``stage``)
     is actually new content here. The actual Skeleton and BlendShape prims
     are ``def``-ed directly. The Animation prim is deliberately excluded (it
-    belongs only in anim.usd), and any ``skel:animationSource`` on the
-    copied Skeleton is cleared.
+    belongs only in anim.usd), but the copied Skeleton's
+    ``skel:animationSource`` is repointed at ``binding.anim_path`` rather
+    than cleared: that target is a prim path within the shared namespace,
+    not a reference to anim.usd itself, so it resolves automatically once
+    anim.usd is loaded alongside skel.usd (sublayer, reference, or payload)
+    and simply dangles harmlessly otherwise. A downstream consumer swapping
+    in a different anim.usd per shot only needs to keep the Animation prim
+    at the same path -- no re-authoring of this relationship required.
     """
     skel_stage = Usd.Stage.CreateNew(skel_path)
 
@@ -204,7 +210,11 @@ def _write_skel_layer(
         if binding.anim_path is not None and skel_stage.GetPrimAtPath(binding.anim_path).IsValid():
             skel_stage.RemovePrim(binding.anim_path)
         copied_skel_prim = skel_stage.GetPrimAtPath(binding.skeleton_path)
-        UsdSkel.BindingAPI(copied_skel_prim).GetAnimationSourceRel().ClearTargets(True)
+        anim_source_rel = UsdSkel.BindingAPI(copied_skel_prim).GetAnimationSourceRel()
+        if binding.anim_path is not None:
+            anim_source_rel.SetTargets([binding.anim_path])
+        else:
+            anim_source_rel.ClearTargets(True)
 
         for mesh_path in binding.skinned_mesh_paths:
             src_mesh_binding = UsdSkel.BindingAPI(stage.GetPrimAtPath(mesh_path))
@@ -250,7 +260,10 @@ def _write_anim_layer(stage: Usd.Stage, bindings: List[_SkelBinding], anim_path:
     """Write a standalone copy of every Animation prim found by discovery.
 
     References nothing: the output is meant to be swappable per-shot
-    against whatever skel.usd it's eventually paired with downstream.
+    against whatever skel.usd it's eventually paired with downstream. Shares
+    the same defaultPrim path as geo.usd/skel.usd so a plain
+    ``AddReference(anim_path)`` (with no explicit prim path) resolves --
+    without a defaultPrim, such a reference composes nothing at all.
     """
     anim_stage = Usd.Stage.CreateNew(anim_path)
 
@@ -266,6 +279,10 @@ def _write_anim_layer(stage: Usd.Stage, bindings: List[_SkelBinding], anim_path:
         anim_stage.SetFramesPerSecond(stage.GetFramesPerSecond())
     if stage.HasAuthoredMetadata("timeCodesPerSecond"):
         anim_stage.SetTimeCodesPerSecond(stage.GetTimeCodesPerSecond())
+
+    src_default_prim = stage.GetDefaultPrim()
+    root_prim = anim_stage.DefinePrim(src_default_prim.GetPath())
+    anim_stage.SetDefaultPrim(root_prim)
 
     for binding in bindings:
         if binding.anim_path is None:
@@ -289,9 +306,12 @@ def split_character_usd(
 
     All three files are standalone and reference nothing — composing them
     (reference, payload, or sublayer) is left entirely to whoever consumes
-    the split. Neither ``_skel.usd`` nor ``_anim.usd`` authors
-    ``skel:animationSource`` — wiring a specific anim clip to the rig is a
-    downstream pipeline decision.
+    the split. ``_skel.usd``'s Skeleton points ``skel:animationSource`` at
+    the matching Animation prim's path in ``_anim.usd``; since that target
+    is a path within the shared namespace rather than a reference to the
+    file itself, it resolves automatically once both are loaded together
+    and a downstream consumer can swap in a different ``_anim.usd`` per
+    shot as long as its Animation prim keeps the same path.
 
     Args:
         character_usd_path: Path to the combined character USD, as written

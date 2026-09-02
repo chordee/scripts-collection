@@ -246,7 +246,17 @@ animation + blendshape）拆成三個獨立檔案：
 
 三個檔案完全獨立，互不 `reference`／`payload`。要組合使用（例如把
 `_skel.usd` 的蒙皮資料疊回 `_geo.usd` 的幾何上）由下游自行決定要用
-reference、payload 還是 sublayer——`split_character_usd` 不預設任何一種。
+reference、payload 還是 sublayer——`split_character_usd` 不預設任何一種；
+三個檔案共用同一個 `defaultPrim` 路徑，`reference`／`sublayer` 都能直接
+組合起來。
+
+`_skel.usd` 的 `Skeleton` 會把 `skel:animationSource` 指向 `_anim.usd`
+裡對應 `UsdSkelAnimation` 的 prim 路徑——這個路徑只是 composed namespace
+裡的一個位置，不是指向 `_anim.usd` 這個檔案本身，所以只要 `_anim.usd`
+（或任何路徑相同的替代動畫檔）也被組合進來就會自動解析，沒組合進來時
+單純懸空、不影響其他部分。這代表把三個檔案 sublayer 或 reference 在一起
+就會是完整可動畫的角色；要換掉某個 shot 的動畫，只要換一個 `_anim.usd`
+（維持同樣的 Animation prim 路徑）即可，不需要改 `_skel.usd`。
 
 真實 `mayaUSDExport` 輸出常包含大量**未被蒙皮綁定**的 `Skeleton` +
 `Animation` prim pair（例如 Maya FK/IK 控制骨架的每根控制關節都會各自
