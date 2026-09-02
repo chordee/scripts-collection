@@ -10,7 +10,7 @@ pytest.importorskip("pxr")
 
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdSkel, Vt
 
-from utils.character_usd_split import _discover_bindings
+from utils.character_usd_split import _discover_bindings, _write_geo_layer
 
 
 def _build_character_stage(path, with_blendshape=True):
@@ -92,3 +92,34 @@ def test_discover_bindings_returns_empty_for_stage_without_skinning(tmp_path):
     stage.GetRootLayer().Save()
 
     assert _discover_bindings(stage) == []
+
+
+def test_write_geo_layer_strips_skeleton_content(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    bindings = _discover_bindings(stage)
+    geo_path = str(tmp_path / "character_geo.usd")
+
+    _write_geo_layer(stage, bindings, geo_path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    mesh_prim = geo_stage.GetPrimAtPath("/Character/Geom/box")
+    assert mesh_prim.IsValid()
+    assert list(UsdGeom.Mesh(mesh_prim).GetPointsAttr().Get()) == [
+        Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
+    ]
+    assert mesh_prim.GetAppliedSchemas() == []
+    assert not any(p.startswith("skel:") or p.startswith("primvars:skel:") for p in mesh_prim.GetPropertyNames())
+    assert not geo_stage.GetPrimAtPath("/Character/Skel").IsValid()
+    assert not geo_stage.GetPrimAtPath("/Character/Skel/Anim").IsValid()
+    assert not geo_stage.GetPrimAtPath("/Character/Geom/box/blink").IsValid()
+
+
+def test_write_geo_layer_no_blendshape(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"), with_blendshape=False)
+    bindings = _discover_bindings(stage)
+    geo_path = str(tmp_path / "character_geo.usd")
+
+    _write_geo_layer(stage, bindings, geo_path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    assert geo_stage.GetPrimAtPath("/Character/Geom/box").IsValid()

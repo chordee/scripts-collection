@@ -76,3 +76,34 @@ def _discover_bindings(stage: Usd.Stage) -> List[_SkelBinding]:
             )
 
     return result
+
+
+def _write_geo_layer(stage: Usd.Stage, bindings: List[_SkelBinding], geo_path: str) -> None:
+    """Write a geometry-only copy of ``stage`` with all skeleton content removed.
+
+    Copies the full input layer, then removes every Skeleton prim (which
+    also removes any Animation prim nested under it), every BlendShape
+    prim, and — on every skinned mesh — the applied SkelBindingAPI schema
+    plus all ``skel:``-namespaced properties.
+    """
+    geo_layer = Sdf.Layer.CreateNew(geo_path)
+    Sdf.CopySpec(stage.GetRootLayer(), Sdf.Path("/"), geo_layer, Sdf.Path("/"))
+    geo_stage = Usd.Stage.Open(geo_layer)
+
+    for binding in bindings:
+        if geo_stage.GetPrimAtPath(binding.skeleton_path).IsValid():
+            geo_stage.RemovePrim(binding.skeleton_path)
+
+        for bs_path in binding.blend_shape_paths:
+            if geo_stage.GetPrimAtPath(bs_path).IsValid():
+                geo_stage.RemovePrim(bs_path)
+
+        for mesh_path in binding.skinned_mesh_paths:
+            mesh_prim = geo_stage.GetPrimAtPath(mesh_path)
+            mesh_prim.RemoveAPI(UsdSkel.BindingAPI)
+            for prop_name in list(mesh_prim.GetPropertyNames()):
+                if prop_name.startswith("primvars:skel:") or prop_name.startswith("skel:"):
+                    mesh_prim.RemoveProperty(prop_name)
+
+    geo_stage.GetRootLayer().Save()
+    _logger.info("Wrote geo-only USD: %s", geo_path)
