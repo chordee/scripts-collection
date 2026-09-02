@@ -81,10 +81,12 @@ def _discover_bindings(stage: Usd.Stage) -> List[_SkelBinding]:
 def _write_geo_layer(stage: Usd.Stage, bindings: List[_SkelBinding], geo_path: str) -> None:
     """Write a geometry-only copy of ``stage`` with all skeleton content removed.
 
-    Copies the full input layer, then removes every Skeleton prim (which
-    also removes any Animation prim nested under it), every BlendShape
-    prim, and — on every skinned mesh — the applied SkelBindingAPI schema
-    plus all ``skel:``-namespaced properties.
+    Copies the full input layer, then removes every Skeleton prim, every
+    Animation prim, and every BlendShape prim, and strips the applied
+    SkelBindingAPI schema plus all ``skel:``-namespaced properties from
+    every prim on the copied stage that carries them (not just the
+    skinned meshes -- the schema can be applied on a SkelRoot or other
+    ancestor too).
     """
     geo_layer = Sdf.Layer.CreateNew(geo_path)
     Sdf.CopySpec(stage.GetRootLayer(), Sdf.Path("/"), geo_layer, Sdf.Path("/"))
@@ -94,16 +96,29 @@ def _write_geo_layer(stage: Usd.Stage, bindings: List[_SkelBinding], geo_path: s
         if geo_stage.GetPrimAtPath(binding.skeleton_path).IsValid():
             geo_stage.RemovePrim(binding.skeleton_path)
 
+        # Removed independently of the Skeleton above: skel:animationSource
+        # allows the Animation prim to live anywhere, e.g. as a sibling of
+        # the Skeleton rather than nested under it, so it isn't guaranteed
+        # to be swept up by RemovePrim's recursion.
+        if binding.anim_path is not None and geo_stage.GetPrimAtPath(binding.anim_path).IsValid():
+            geo_stage.RemovePrim(binding.anim_path)
+
         for bs_path in binding.blend_shape_paths:
             if geo_stage.GetPrimAtPath(bs_path).IsValid():
                 geo_stage.RemovePrim(bs_path)
 
-        for mesh_path in binding.skinned_mesh_paths:
-            mesh_prim = geo_stage.GetPrimAtPath(mesh_path)
-            mesh_prim.RemoveAPI(UsdSkel.BindingAPI)
-            for prop_name in list(mesh_prim.GetPropertyNames()):
-                if prop_name.startswith("primvars:skel:") or prop_name.startswith("skel:"):
-                    mesh_prim.RemoveProperty(prop_name)
+    # SkelBindingAPI can be applied on any prim -- the SkelRoot or another
+    # ancestor, not only the skinned mesh -- since UsdSkel bindings are
+    # namespace-inherited. Strip the schema and skel:-namespaced properties
+    # wherever it's actually applied so geo.usd never carries a dangling
+    # skel:skeleton/skel:animationSource pointing at content removed above.
+    for prim in geo_stage.Traverse():
+        if "SkelBindingAPI" not in prim.GetAppliedSchemas():
+            continue
+        prim.RemoveAPI(UsdSkel.BindingAPI)
+        for prop_name in list(prim.GetPropertyNames()):
+            if prop_name.startswith("primvars:skel:") or prop_name.startswith("skel:"):
+                prim.RemoveProperty(prop_name)
 
     geo_stage.GetRootLayer().Save()
     _logger.info("Wrote geo-only USD: %s", geo_path)
@@ -145,12 +160,28 @@ def _write_skel_layer(
     skel_stage = Usd.Stage.CreateNew(skel_path)
     geo_relpath = os.path.relpath(geo_path, os.path.dirname(skel_path)).replace("\\", "/")
 
+    # Up-axis/units aren't inherited across a reference or a standalone
+    # CreateNew() stage, so copy them explicitly -- otherwise skel.usd opened
+    # on its own reports USD's defaults, which may not match geo.usd's.
+    if stage.HasAuthoredMetadata("upAxis"):
+        UsdGeom.SetStageUpAxis(skel_stage, UsdGeom.GetStageUpAxis(stage))
+    if stage.HasAuthoredMetadata("metersPerUnit"):
+        UsdGeom.SetStageMetersPerUnit(skel_stage, UsdGeom.GetStageMetersPerUnit(stage))
+
     src_default_prim = stage.GetDefaultPrim()
     root_prim = skel_stage.DefinePrim(src_default_prim.GetPath())
     root_prim.GetReferences().AddReference(geo_relpath)
     skel_stage.SetDefaultPrim(root_prim)
 
     for binding in bindings:
+        skeleton_parent = binding.skeleton_path.GetParentPath()
+        if not skeleton_parent.isEmpty and skeleton_parent != Sdf.Path.absoluteRootPath:
+            # CopySpec requires the destination ancestor to already exist.
+            # Only new ancestors are downgraded to `over` -- if this path
+            # is the defaultPrim (already `def`-ed above), leave it as-is.
+            ancestor_spec = Sdf.CreatePrimInLayer(skel_stage.GetRootLayer(), skeleton_parent)
+            if ancestor_spec.specifier != Sdf.SpecifierDef:
+                ancestor_spec.specifier = Sdf.SpecifierOver
         Sdf.CopySpec(
             stage.GetRootLayer(), binding.skeleton_path,
             skel_stage.GetRootLayer(), binding.skeleton_path,
@@ -206,6 +237,19 @@ def _write_anim_layer(stage: Usd.Stage, bindings: List[_SkelBinding], anim_path:
     """
     anim_stage = Usd.Stage.CreateNew(anim_path)
 
+    # Time-sample playback metadata isn't inherited by a standalone
+    # CreateNew() stage, so copy it explicitly. Guarded by HasAuthoredMetadata
+    # so a source stage that never set these doesn't get misleading defaults
+    # (e.g. framesPerSecond, which always reports a value even when unauthored).
+    if stage.HasAuthoredMetadata("startTimeCode"):
+        anim_stage.SetStartTimeCode(stage.GetStartTimeCode())
+    if stage.HasAuthoredMetadata("endTimeCode"):
+        anim_stage.SetEndTimeCode(stage.GetEndTimeCode())
+    if stage.HasAuthoredMetadata("framesPerSecond"):
+        anim_stage.SetFramesPerSecond(stage.GetFramesPerSecond())
+    if stage.HasAuthoredMetadata("timeCodesPerSecond"):
+        anim_stage.SetTimeCodesPerSecond(stage.GetTimeCodesPerSecond())
+
     for binding in bindings:
         if binding.anim_path is None:
             continue
@@ -249,7 +293,8 @@ def split_character_usd(
     Raises:
         FileNotFoundError: If ``character_usd_path`` does not exist.
         ValueError: If the stage has no resolvable UsdSkel binding at all
-            (nothing to split — this function is for rigged characters).
+            (nothing to split — this function is for rigged characters), or
+            if the stage has no defaultPrim authored.
     """
     if not os.path.isfile(character_usd_path):
         raise FileNotFoundError(f"USD file not found: {character_usd_path}")
@@ -258,6 +303,8 @@ def split_character_usd(
     bindings = _discover_bindings(stage)
     if not bindings:
         raise ValueError(f"No UsdSkel bindings found in: {character_usd_path}")
+    if not stage.GetDefaultPrim().IsValid():
+        raise ValueError(f"Stage has no defaultPrim: {character_usd_path}")
 
     out_dir = output_dir or os.path.dirname(os.path.abspath(character_usd_path))
     base = os.path.splitext(os.path.basename(character_usd_path))[0]
@@ -265,9 +312,17 @@ def split_character_usd(
     skel_path = os.path.join(out_dir, f"{base}_skel.usd")
     anim_path = os.path.join(out_dir, f"{base}_anim.usd")
 
-    _write_geo_layer(stage, bindings, geo_path)
-    _write_skel_layer(stage, bindings, geo_path, skel_path)
-    _write_anim_layer(stage, bindings, anim_path)
+    try:
+        _write_geo_layer(stage, bindings, geo_path)
+        _write_skel_layer(stage, bindings, geo_path, skel_path)
+        _write_anim_layer(stage, bindings, anim_path)
+    except Exception:
+        # Don't leave a partial split on disk -- downstream tooling globbing
+        # for *_geo.usd etc. can't distinguish a completed split from a failed one.
+        for output_path in (geo_path, skel_path, anim_path):
+            if os.path.exists(output_path):
+                os.remove(output_path)
+        raise
 
     _logger.info(
         "Split %s -> geo=%s skel=%s anim=%s",
