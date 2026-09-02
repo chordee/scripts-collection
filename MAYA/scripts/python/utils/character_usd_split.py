@@ -161,26 +161,31 @@ def _copy_primvar(src_binding, dst_binding, get_src_pv, create_dst_pv) -> None:
 def _write_skel_layer(
     stage: Usd.Stage,
     bindings: List[_SkelBinding],
-    geo_path: str,
     skel_path: str,
 ) -> None:
-    """Write a stage that references ``geo_path`` and overlays skinning data.
+    """Write a standalone stage carrying the skeleton and skinning overlay.
 
-    For each skinned mesh, adds an ``over`` re-authoring SkelBindingAPI,
-    joint indices/weights, geomBindTransform, and the skeleton/blendshape
-    relationships (copied verbatim from ``stage``) onto the mesh referenced
-    in from ``geo_path`` — no mesh geometry is duplicated. The actual
-    Skeleton and BlendShape prims are ``def``-ed directly (they're new
-    content, not overrides of anything in geo.usd). The Animation prim is
-    deliberately excluded (it belongs only in anim.usd), and any
-    ``skel:animationSource`` on the copied Skeleton is cleared.
+    References nothing — geo.usd, skel.usd, and anim.usd are three
+    independent files; composing them (reference, payload, or sublayer) is
+    left entirely to whoever consumes the split. For each skinned mesh, this
+    writes a typeless ``def`` prim (not ``over``: with no reference bringing
+    in geo.usd's ``def Mesh``, an ``over`` mesh -- or an ``over`` anywhere in
+    its ancestor chain -- would be invisible to Usd.Stage.Traverse()'s
+    default predicate, along with everything nested under it, e.g. a
+    BlendShape). Leaving typeName unauthored means composing this mesh path
+    with geo.usd's later still resolves to the real Mesh type; only the
+    skinning data (SkelBindingAPI, joint indices/weights, geomBindTransform,
+    skeleton/blendshape relationships, all copied verbatim from ``stage``)
+    is actually new content here. The actual Skeleton and BlendShape prims
+    are ``def``-ed directly. The Animation prim is deliberately excluded (it
+    belongs only in anim.usd), and any ``skel:animationSource`` on the
+    copied Skeleton is cleared.
     """
     skel_stage = Usd.Stage.CreateNew(skel_path)
-    geo_relpath = os.path.relpath(geo_path, os.path.dirname(skel_path)).replace("\\", "/")
 
-    # Up-axis/units aren't inherited across a reference or a standalone
-    # CreateNew() stage, so copy them explicitly -- otherwise skel.usd opened
-    # on its own reports USD's defaults, which may not match geo.usd's.
+    # Up-axis/units aren't inherited by a standalone CreateNew() stage, so
+    # copy them explicitly -- otherwise skel.usd opened on its own reports
+    # USD's defaults, which may not match the source stage's.
     if stage.HasAuthoredMetadata("upAxis"):
         UsdGeom.SetStageUpAxis(skel_stage, UsdGeom.GetStageUpAxis(stage))
     if stage.HasAuthoredMetadata("metersPerUnit"):
@@ -188,7 +193,6 @@ def _write_skel_layer(
 
     src_default_prim = stage.GetDefaultPrim()
     root_prim = skel_stage.DefinePrim(src_default_prim.GetPath())
-    root_prim.GetReferences().AddReference(geo_relpath)
     skel_stage.SetDefaultPrim(root_prim)
 
     for binding in bindings:
@@ -204,8 +208,10 @@ def _write_skel_layer(
 
         for mesh_path in binding.skinned_mesh_paths:
             src_mesh_binding = UsdSkel.BindingAPI(stage.GetPrimAtPath(mesh_path))
-            over_mesh = skel_stage.OverridePrim(mesh_path)
-            over_binding = UsdSkel.BindingAPI.Apply(over_mesh)
+            _define_ancestor_chain(skel_stage.GetRootLayer(), mesh_path)
+            mesh_spec = Sdf.CreatePrimInLayer(skel_stage.GetRootLayer(), mesh_path)
+            mesh_spec.specifier = Sdf.SpecifierDef
+            over_binding = UsdSkel.BindingAPI.Apply(skel_stage.GetPrimAtPath(mesh_path))
 
             _copy_primvar(
                 src_mesh_binding, over_binding,
@@ -237,7 +243,7 @@ def _write_skel_layer(
             Sdf.CopySpec(stage.GetRootLayer(), bs_path, skel_stage.GetRootLayer(), bs_path)
 
     skel_stage.GetRootLayer().Save()
-    _logger.info("Wrote skeleton+binding USD: %s (references %s)", skel_path, geo_relpath)
+    _logger.info("Wrote skeleton+binding USD: %s (standalone, references nothing)", skel_path)
 
 
 def _write_anim_layer(stage: Usd.Stage, bindings: List[_SkelBinding], anim_path: str) -> None:
@@ -281,8 +287,9 @@ def split_character_usd(
     """Split a combined character USD (geo + skeleton + animation) into
     three independent files: <name>_geo.usd, <name>_skel.usd, <name>_anim.usd.
 
-    ``_skel.usd`` references ``_geo.usd`` (to avoid duplicating mesh point
-    data); ``_anim.usd`` is fully standalone. Neither file authors
+    All three files are standalone and reference nothing — composing them
+    (reference, payload, or sublayer) is left entirely to whoever consumes
+    the split. Neither ``_skel.usd`` nor ``_anim.usd`` authors
     ``skel:animationSource`` — wiring a specific anim clip to the rig is a
     downstream pipeline decision.
 
@@ -319,7 +326,7 @@ def split_character_usd(
 
     try:
         _write_geo_layer(stage, geo_path)
-        _write_skel_layer(stage, bindings, geo_path, skel_path)
+        _write_skel_layer(stage, bindings, skel_path)
         _write_anim_layer(stage, bindings, anim_path)
     except Exception:
         # Don't leave a partial split on disk -- downstream tooling globbing

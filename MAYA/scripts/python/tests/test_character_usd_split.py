@@ -95,6 +95,21 @@ def _build_character_stage(
     return stage
 
 
+def _compose_geo_and_skel(geo_path, skel_path, default_prim_path="/Character"):
+    """Simulate a downstream consumer composing the two independent files.
+
+    geo.usd and skel.usd deliberately reference nothing on their own --
+    whoever consumes the split picks how to combine them. Tests use this
+    helper to prove they compose correctly when referenced together.
+    """
+    stage = Usd.Stage.CreateInMemory()
+    root_prim = stage.DefinePrim(default_prim_path)
+    root_prim.GetReferences().AddReference(geo_path)
+    root_prim.GetReferences().AddReference(skel_path)
+    stage.SetDefaultPrim(root_prim)
+    return stage
+
+
 def test_discover_bindings_finds_skeleton_mesh_anim_and_blendshape(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"))
 
@@ -155,22 +170,23 @@ def test_write_geo_layer_no_blendshape(tmp_path):
     assert geo_stage.GetPrimAtPath("/Character/Geom/box").IsValid()
 
 
-def test_write_skel_layer_references_geo_and_overlays_skinning(tmp_path):
+def test_write_skel_layer_is_standalone_and_composes_with_geo(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"))
     bindings = _discover_bindings(stage)
     geo_path = str(tmp_path / "character_geo.usd")
     skel_path = str(tmp_path / "character_skel.usd")
     _write_geo_layer(stage, geo_path)
 
-    _write_skel_layer(stage, bindings, geo_path, skel_path)
+    _write_skel_layer(stage, bindings, skel_path)
 
     skel_stage = Usd.Stage.Open(skel_path)
+    assert not skel_stage.GetRootLayer().GetExternalReferences()
     mesh_prim = skel_stage.GetPrimAtPath("/Character/Geom/box")
 
-    # Points come from the reference to geo.usd -- not duplicated locally.
-    assert list(UsdGeom.Mesh(mesh_prim).GetPointsAttr().Get()) == [
-        Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
-    ]
+    # No geometry of its own -- typeless def, points come only from
+    # whatever the consumer composes this with (e.g. geo.usd).
+    assert mesh_prim.GetTypeName() == ""
+    assert not mesh_prim.GetAttribute("points").IsValid()
 
     mesh_binding = UsdSkel.BindingAPI(mesh_prim)
     assert list(mesh_binding.GetJointIndicesPrimvar().Get()) == [0, 0, 0, 0]
@@ -191,15 +207,21 @@ def test_write_skel_layer_references_geo_and_overlays_skinning(tmp_path):
     assert blink_prim.IsValid()
     assert list(UsdSkel.BlendShape(blink_prim).GetOffsetsAttr().Get()) == [Gf.Vec3f(0, 0, 0.1)] * 4
 
+    # A consumer composing the two independent files gets a fully skinned mesh.
+    composed_stage = _compose_geo_and_skel(geo_path, skel_path)
+    composed_mesh = composed_stage.GetPrimAtPath("/Character/Geom/box")
+    assert list(UsdGeom.Mesh(composed_mesh).GetPointsAttr().Get()) == [
+        Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
+    ]
+    assert list(UsdSkel.BindingAPI(composed_mesh).GetJointIndicesPrimvar().Get()) == [0, 0, 0, 0]
+
 
 def test_write_skel_layer_no_blendshape(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"), with_blendshape=False)
     bindings = _discover_bindings(stage)
-    geo_path = str(tmp_path / "character_geo.usd")
     skel_path = str(tmp_path / "character_skel.usd")
-    _write_geo_layer(stage, geo_path)
 
-    _write_skel_layer(stage, bindings, geo_path, skel_path)
+    _write_skel_layer(stage, bindings, skel_path)
 
     skel_stage = Usd.Stage.Open(skel_path)
     mesh_binding = UsdSkel.BindingAPI(skel_stage.GetPrimAtPath("/Character/Geom/box"))
@@ -239,9 +261,13 @@ def test_split_character_usd_end_to_end(tmp_path):
     assert os.path.exists(skel_path)
     assert os.path.exists(anim_path)
 
-    # Spot-check the composed skel.usd actually resolves geometry + skinning together.
     skel_stage = Usd.Stage.Open(skel_path)
-    mesh_prim = skel_stage.GetPrimAtPath("/Character/Geom/box")
+    assert not skel_stage.GetRootLayer().GetExternalReferences()
+    assert not skel_stage.GetPrimAtPath("/Character/Geom/box").GetAttribute("points").IsValid()
+
+    # The consumer composes the independent geo and skel layers explicitly.
+    composed_stage = _compose_geo_and_skel(geo_path, skel_path)
+    mesh_prim = composed_stage.GetPrimAtPath("/Character/Geom/box")
     assert list(UsdGeom.Mesh(mesh_prim).GetPointsAttr().Get()) == [
         Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
     ]
@@ -350,11 +376,9 @@ def test_write_skel_layer_copies_stage_up_axis_and_units(tmp_path):
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     stage.GetRootLayer().Save()
     bindings = _discover_bindings(stage)
-    geo_path = str(tmp_path / "character_geo.usd")
     skel_path = str(tmp_path / "character_skel.usd")
-    _write_geo_layer(stage, geo_path)
 
-    _write_skel_layer(stage, bindings, geo_path, skel_path)
+    _write_skel_layer(stage, bindings, skel_path)
 
     skel_stage = Usd.Stage.Open(skel_path)
     assert UsdGeom.GetStageUpAxis(skel_stage) == UsdGeom.Tokens.z
@@ -375,7 +399,11 @@ def test_split_character_usd_skeleton_nested_two_levels_below_default_prim(tmp_p
     assert skel_prim.IsValid()
     assert list(UsdSkel.Skeleton(skel_prim).GetJointsAttr().Get()) == ["root", "root/child"]
 
-    mesh_prim = skel_stage.GetPrimAtPath("/root/Character/Geom/box")
+    assert not skel_stage.GetRootLayer().GetExternalReferences()
+    assert not skel_stage.GetPrimAtPath("/root/Character/Geom/box").GetAttribute("points").IsValid()
+
+    composed_stage = _compose_geo_and_skel(geo_path, skel_path, default_prim_path="/root")
+    mesh_prim = composed_stage.GetPrimAtPath("/root/Character/Geom/box")
     assert list(UsdGeom.Mesh(mesh_prim).GetPointsAttr().Get()) == [
         Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
     ]
@@ -497,7 +525,7 @@ def test_write_skel_layer_content_visible_via_default_traverse(tmp_path):
     skel_path = str(tmp_path / "character_skel.usd")
     _write_geo_layer(stage, geo_path)
 
-    _write_skel_layer(stage, bindings, geo_path, skel_path)
+    _write_skel_layer(stage, bindings, skel_path)
 
     skel_stage = Usd.Stage.Open(skel_path)
     traversed = {str(p.GetPath()) for p in skel_stage.Traverse()}

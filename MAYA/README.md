@@ -235,12 +235,24 @@ geo_path, skel_path, anim_path = split_character_usd("character.usd")
 把 `mayaUSDExport` 匯出的合併角色 USD（geo + UsdSkel skinning + skeleton +
 animation + blendshape）拆成三個獨立檔案：
 
-- `<name>_geo.usd`：純幾何，不含任何 skinning / skeleton 資料。
-- `<name>_skel.usd`：`references` `_geo.usd`（不重複 mesh 點資料），疊加
-  skinning primvars（`jointIndices` / `jointWeights` / `geomBindTransform`）
-  與 `skel:skeleton` 關係，並包含真正的 `Skeleton` 與 `BlendShape` prim。
-- `<name>_anim.usd`：完全獨立，只含 `UsdSkelAnimation`（joint 動畫時間量
-  資料，以及 blendshape 的 `blendShapeWeights`）。
+- `<name>_geo.usd`：純幾何，不含任何 skinning / skeleton 資料（不論該
+  mesh 原本有沒有被蒙皮綁定）。
+- `<name>_skel.usd`：只含**有實際蒙皮綁定**的 `Skeleton`／`BlendShape`
+  prim，以及疊加在 mesh 路徑上的 skinning primvars（`jointIndices` /
+  `jointWeights` / `geomBindTransform`）與 `skel:skeleton` 關係——這些
+  mesh 路徑本身是沒有型別的 `over`/`def`，不含幾何資料。
+- `<name>_anim.usd`：只含**有實際蒙皮綁定**之骨架的 `UsdSkelAnimation`
+  （joint 動畫時間量資料，以及 blendshape 的 `blendShapeWeights`）。
+
+三個檔案完全獨立，互不 `reference`／`payload`。要組合使用（例如把
+`_skel.usd` 的蒙皮資料疊回 `_geo.usd` 的幾何上）由下游自行決定要用
+reference、payload 還是 sublayer——`split_character_usd` 不預設任何一種。
+
+真實 `mayaUSDExport` 輸出常包含大量**未被蒙皮綁定**的 `Skeleton` +
+`Animation` prim pair（例如 Maya FK/IK 控制骨架的每根控制關節都會各自
+匯出一組），這些不屬於任何 mesh 的 skinning，因此三個輸出檔案都不會有
+它們——只有透過 `UsdSkel.Cache.ComputeSkelBindings` 真正解析出蒙皮綁定
+關係的骨架才會進到 `_skel.usd`／`_anim.usd`。
 
 不是 Maya-USD Export Chaser plugin，單純函式，匯出後手動呼叫：
 
