@@ -10,7 +10,7 @@ pytest.importorskip("pxr")
 
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdSkel, Vt
 
-from utils.character_usd_split import _discover_bindings, _write_geo_layer
+from utils.character_usd_split import _discover_bindings, _write_geo_layer, _write_skel_layer
 
 
 def _build_character_stage(path, with_blendshape=True):
@@ -123,3 +123,55 @@ def test_write_geo_layer_no_blendshape(tmp_path):
 
     geo_stage = Usd.Stage.Open(geo_path)
     assert geo_stage.GetPrimAtPath("/Character/Geom/box").IsValid()
+
+
+def test_write_skel_layer_references_geo_and_overlays_skinning(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    bindings = _discover_bindings(stage)
+    geo_path = str(tmp_path / "character_geo.usd")
+    skel_path = str(tmp_path / "character_skel.usd")
+    _write_geo_layer(stage, bindings, geo_path)
+
+    _write_skel_layer(stage, bindings, geo_path, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    mesh_prim = skel_stage.GetPrimAtPath("/Character/Geom/box")
+
+    # Points come from the reference to geo.usd -- not duplicated locally.
+    assert list(UsdGeom.Mesh(mesh_prim).GetPointsAttr().Get()) == [
+        Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
+    ]
+
+    mesh_binding = UsdSkel.BindingAPI(mesh_prim)
+    assert list(mesh_binding.GetJointIndicesPrimvar().Get()) == [0, 0, 0, 0]
+    assert list(mesh_binding.GetJointWeightsPrimvar().Get()) == [1.0, 1.0, 1.0, 1.0]
+    assert mesh_binding.GetGeomBindTransformAttr().Get() == Gf.Matrix4d(1)
+    assert mesh_binding.GetSkeletonRel().GetTargets() == [Sdf.Path("/Character/Skel")]
+    assert mesh_binding.GetBlendShapesAttr().Get() == ["blink"]
+    assert mesh_binding.GetBlendShapeTargetsRel().GetTargets() == [Sdf.Path("/Character/Geom/box/blink")]
+
+    skel_prim = skel_stage.GetPrimAtPath("/Character/Skel")
+    assert list(UsdSkel.Skeleton(skel_prim).GetJointsAttr().Get()) == ["root", "root/child"]
+    assert UsdSkel.BindingAPI(skel_prim).GetAnimationSourceRel().GetTargets() == []
+
+    # The Anim prim must NOT leak into skel.usd -- it belongs only in anim.usd.
+    assert not skel_stage.GetPrimAtPath("/Character/Skel/Anim").IsValid()
+
+    blink_prim = skel_stage.GetPrimAtPath("/Character/Geom/box/blink")
+    assert blink_prim.IsValid()
+    assert list(UsdSkel.BlendShape(blink_prim).GetOffsetsAttr().Get()) == [Gf.Vec3f(0, 0, 0.1)] * 4
+
+
+def test_write_skel_layer_no_blendshape(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"), with_blendshape=False)
+    bindings = _discover_bindings(stage)
+    geo_path = str(tmp_path / "character_geo.usd")
+    skel_path = str(tmp_path / "character_skel.usd")
+    _write_geo_layer(stage, bindings, geo_path)
+
+    _write_skel_layer(stage, bindings, geo_path, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    mesh_binding = UsdSkel.BindingAPI(skel_stage.GetPrimAtPath("/Character/Geom/box"))
+    assert mesh_binding.GetBlendShapesAttr().Get() is None
+    assert not skel_stage.GetPrimAtPath("/Character/Geom/box/blink").IsValid()
