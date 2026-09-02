@@ -238,6 +238,21 @@ def _write_skel_layer(
             if geom_bind_attr.HasAuthoredValue():
                 over_binding.CreateGeomBindTransformAttr().Set(geom_bind_attr.Get())
 
+            # skel:joints is a per-mesh joint order/subset remapping jointIndices
+            # against something other than the Skeleton's full joint list --
+            # without it, jointIndices values are silently reinterpreted as
+            # indexing the full skeleton, binding vertices to the wrong joints.
+            joints_attr = src_mesh_binding.GetJointsAttr()
+            if joints_attr.HasAuthoredValue():
+                over_binding.CreateJointsAttr(joints_attr.Get())
+
+            # Defaults to classicLinear if unauthored -- dualQuaternion (or
+            # any non-default method) produces visibly different results
+            # around twisting joints, so it must be copied explicitly.
+            skinning_method_attr = src_mesh_binding.GetSkinningMethodAttr()
+            if skinning_method_attr.HasAuthoredValue():
+                over_binding.CreateSkinningMethodAttr(skinning_method_attr.Get())
+
             over_binding.CreateSkeletonRel().SetTargets([binding.skeleton_path])
 
             bs_names = src_mesh_binding.GetBlendShapesAttr().Get()
