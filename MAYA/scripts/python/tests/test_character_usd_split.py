@@ -170,6 +170,66 @@ def test_write_geo_layer_no_blendshape(tmp_path):
     assert geo_stage.GetPrimAtPath("/Character/Geom/box").IsValid()
 
 
+def test_write_geo_layer_hide_curves_and_guide_purpose(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    curve = UsdGeom.BasisCurves.Define(stage, "/Character/Geom/ctrl_curve")
+    curve.CreatePointsAttr(Vt.Vec3fArray([(0, 0, 0), (1, 0, 0)]))
+    curve.CreateCurveVertexCountsAttr(Vt.IntArray([2]))
+    stage.GetRootLayer().Save()
+    geo_path = str(tmp_path / "character_geo.usd")
+
+    _write_geo_layer(stage, geo_path, hide_curves=True, curves_purpose_guide=True)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    curve_prim = geo_stage.GetPrimAtPath("/Character/Geom/ctrl_curve")
+    imageable = UsdGeom.Imageable(curve_prim)
+    assert imageable.GetVisibilityAttr().Get() == UsdGeom.Tokens.invisible
+    assert imageable.GetPurposeAttr().Get() == UsdGeom.Tokens.guide
+    # Unaffected by the curve-only flags.
+    mesh_imageable = UsdGeom.Imageable(geo_stage.GetPrimAtPath("/Character/Geom/box"))
+    assert mesh_imageable.GetVisibilityAttr().Get() != UsdGeom.Tokens.invisible
+
+
+def test_write_geo_layer_curve_flags_default_off(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    curve = UsdGeom.BasisCurves.Define(stage, "/Character/Geom/ctrl_curve")
+    curve.CreatePointsAttr(Vt.Vec3fArray([(0, 0, 0), (1, 0, 0)]))
+    curve.CreateCurveVertexCountsAttr(Vt.IntArray([2]))
+    stage.GetRootLayer().Save()
+    geo_path = str(tmp_path / "character_geo.usd")
+
+    _write_geo_layer(stage, geo_path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    imageable = UsdGeom.Imageable(geo_stage.GetPrimAtPath("/Character/Geom/ctrl_curve"))
+    assert not imageable.GetVisibilityAttr().IsAuthored()
+    assert not imageable.GetPurposeAttr().IsAuthored()
+
+
+def test_write_skel_layer_hide_skeleton(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    bindings = _discover_bindings(stage)
+    skel_path = str(tmp_path / "character_skel.usd")
+
+    _write_skel_layer(stage, bindings, skel_path, hide_skeleton=True)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    skel_imageable = UsdGeom.Imageable(skel_stage.GetPrimAtPath("/Character/Skel"))
+    assert skel_imageable.GetVisibilityAttr().Get() == UsdGeom.Tokens.invisible
+
+
+def test_write_skel_layer_hide_skeleton_default_off(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    bindings = _discover_bindings(stage)
+    skel_path = str(tmp_path / "character_skel.usd")
+
+    _write_skel_layer(stage, bindings, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    skel_imageable = UsdGeom.Imageable(skel_stage.GetPrimAtPath("/Character/Skel"))
+    assert not skel_imageable.GetVisibilityAttr().IsAuthored()
+
+
 def test_write_skel_layer_is_standalone_and_composes_with_geo(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"))
     bindings = _discover_bindings(stage)
@@ -330,6 +390,28 @@ def test_split_character_usd_sublayered_together_actually_animates(tmp_path):
     transforms_at_1 = skel_query.ComputeJointSkelTransforms(1.0)
     transforms_at_2 = skel_query.ComputeJointSkelTransforms(2.0)
     assert transforms_at_1 != transforms_at_2
+
+
+def test_split_character_usd_hide_and_guide_flags_end_to_end(tmp_path):
+    src_path = str(tmp_path / "character.usda")
+    stage = _build_character_stage(src_path)
+    curve = UsdGeom.BasisCurves.Define(stage, "/Character/Geom/ctrl_curve")
+    curve.CreatePointsAttr(Vt.Vec3fArray([(0, 0, 0), (1, 0, 0)]))
+    curve.CreateCurveVertexCountsAttr(Vt.IntArray([2]))
+    stage.GetRootLayer().Save()
+
+    geo_path, skel_path, anim_path = split_character_usd(
+        src_path, hide_curves=True, hide_skeleton=True, curves_purpose_guide=True
+    )
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    curve_imageable = UsdGeom.Imageable(geo_stage.GetPrimAtPath("/Character/Geom/ctrl_curve"))
+    assert curve_imageable.GetVisibilityAttr().Get() == UsdGeom.Tokens.invisible
+    assert curve_imageable.GetPurposeAttr().Get() == UsdGeom.Tokens.guide
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    skel_imageable = UsdGeom.Imageable(skel_stage.GetPrimAtPath("/Character/Skel"))
+    assert skel_imageable.GetVisibilityAttr().Get() == UsdGeom.Tokens.invisible
 
 
 def test_split_character_usd_custom_output_dir(tmp_path):
