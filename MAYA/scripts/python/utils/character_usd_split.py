@@ -107,3 +107,92 @@ def _write_geo_layer(stage: Usd.Stage, bindings: List[_SkelBinding], geo_path: s
 
     geo_stage.GetRootLayer().Save()
     _logger.info("Wrote geo-only USD: %s", geo_path)
+
+
+def _copy_primvar(src_binding, dst_binding, get_src_pv, create_dst_pv) -> None:
+    """Copy one UsdGeom.Primvar (interpolation, elementSize, value) across bindings.
+
+    ``get_src_pv``/``create_dst_pv`` are the matching getter/creator pair,
+    e.g. ``lambda b: b.GetJointIndicesPrimvar()`` and
+    ``lambda b, constant, element_size: b.CreateJointIndicesPrimvar(constant, element_size)``.
+    No-ops if the source primvar was never authored.
+    """
+    src_pv = get_src_pv(src_binding)
+    if not src_pv.IsDefined():
+        return
+    is_constant = src_pv.GetInterpolation() == UsdGeom.Tokens.constant
+    dst_pv = create_dst_pv(dst_binding, is_constant, src_pv.GetElementSize())
+    dst_pv.Set(src_pv.Get())
+
+
+def _write_skel_layer(
+    stage: Usd.Stage,
+    bindings: List[_SkelBinding],
+    geo_path: str,
+    skel_path: str,
+) -> None:
+    """Write a stage that references ``geo_path`` and overlays skinning data.
+
+    For each skinned mesh, adds an ``over`` re-authoring SkelBindingAPI,
+    joint indices/weights, geomBindTransform, and the skeleton/blendshape
+    relationships (copied verbatim from ``stage``) onto the mesh referenced
+    in from ``geo_path`` — no mesh geometry is duplicated. The actual
+    Skeleton and BlendShape prims are ``def``-ed directly (they're new
+    content, not overrides of anything in geo.usd). The Animation prim is
+    deliberately excluded (it belongs only in anim.usd), and any
+    ``skel:animationSource`` on the copied Skeleton is cleared.
+    """
+    skel_stage = Usd.Stage.CreateNew(skel_path)
+    geo_relpath = os.path.relpath(geo_path, os.path.dirname(skel_path)).replace("\\", "/")
+
+    src_default_prim = stage.GetDefaultPrim()
+    root_prim = skel_stage.DefinePrim(src_default_prim.GetPath())
+    root_prim.GetReferences().AddReference(geo_relpath)
+    skel_stage.SetDefaultPrim(root_prim)
+
+    for binding in bindings:
+        Sdf.CopySpec(
+            stage.GetRootLayer(), binding.skeleton_path,
+            skel_stage.GetRootLayer(), binding.skeleton_path,
+        )
+        if binding.anim_path is not None and skel_stage.GetPrimAtPath(binding.anim_path).IsValid():
+            skel_stage.RemovePrim(binding.anim_path)
+        copied_skel_prim = skel_stage.GetPrimAtPath(binding.skeleton_path)
+        UsdSkel.BindingAPI(copied_skel_prim).GetAnimationSourceRel().ClearTargets(True)
+
+        for mesh_path in binding.skinned_mesh_paths:
+            src_mesh_binding = UsdSkel.BindingAPI(stage.GetPrimAtPath(mesh_path))
+            over_mesh = skel_stage.OverridePrim(mesh_path)
+            over_binding = UsdSkel.BindingAPI.Apply(over_mesh)
+
+            _copy_primvar(
+                src_mesh_binding, over_binding,
+                lambda b: b.GetJointIndicesPrimvar(),
+                lambda b, c, e: b.CreateJointIndicesPrimvar(c, e),
+            )
+            _copy_primvar(
+                src_mesh_binding, over_binding,
+                lambda b: b.GetJointWeightsPrimvar(),
+                lambda b, c, e: b.CreateJointWeightsPrimvar(c, e),
+            )
+
+            geom_bind_attr = src_mesh_binding.GetGeomBindTransformAttr()
+            if geom_bind_attr.HasAuthoredValue():
+                over_binding.CreateGeomBindTransformAttr().Set(geom_bind_attr.Get())
+
+            over_binding.CreateSkeletonRel().SetTargets([binding.skeleton_path])
+
+            bs_names = src_mesh_binding.GetBlendShapesAttr().Get()
+            if bs_names:
+                over_binding.CreateBlendShapesAttr(bs_names)
+                over_binding.CreateBlendShapeTargetsRel().SetTargets(
+                    src_mesh_binding.GetBlendShapeTargetsRel().GetTargets()
+                )
+
+        # BlendShape prims nest under the mesh path, so copy them only after
+        # the `over` specs above have established that path in this layer.
+        for bs_path in binding.blend_shape_paths:
+            Sdf.CopySpec(stage.GetRootLayer(), bs_path, skel_stage.GetRootLayer(), bs_path)
+
+    skel_stage.GetRootLayer().Save()
+    _logger.info("Wrote skeleton+binding USD: %s (references %s)", skel_path, geo_relpath)
