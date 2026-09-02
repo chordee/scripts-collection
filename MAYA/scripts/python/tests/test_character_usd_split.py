@@ -21,25 +21,44 @@ from utils.character_usd_split import (
 )
 
 
-def _build_character_stage(path, with_blendshape=True):
+def _build_character_stage(
+    path,
+    with_blendshape=True,
+    skel_root_path="/Character",
+    default_prim_path=None,
+    apply_binding_on_skel_root=False,
+    anim_sibling_of_skeleton=False,
+):
     """A SkelRoot > Xform "Geom" > Mesh "box" (skinned) + Skeleton + Animation,
     with explicitly-typed intermediate prims (untyped ancestors break
     UsdSkel.Cache discovery — see the plan's Global Constraints).
+
+    ``skel_root_path``/``default_prim_path`` let callers exercise a SkelRoot
+    nested below the stage's actual defaultPrim (Finding 1); by default the
+    defaultPrim is the SkelRoot itself, matching the original fixture shape.
+    ``apply_binding_on_skel_root`` additionally applies SkelBindingAPI to
+    the SkelRoot prim itself (Finding 2). ``anim_sibling_of_skeleton`` places
+    the Animation prim as a sibling of the Skeleton instead of nested under
+    it (Finding 5).
     """
+    default_prim_path = default_prim_path or skel_root_path
     stage = Usd.Stage.CreateNew(path)
-    UsdSkel.Root.Define(stage, "/Character")
-    UsdGeom.Xform.Define(stage, "/Character/Geom")
-    mesh = UsdGeom.Mesh.Define(stage, "/Character/Geom/box")
+    if default_prim_path != skel_root_path:
+        UsdGeom.Xform.Define(stage, default_prim_path)
+    UsdSkel.Root.Define(stage, skel_root_path)
+    UsdGeom.Xform.Define(stage, f"{skel_root_path}/Geom")
+    mesh = UsdGeom.Mesh.Define(stage, f"{skel_root_path}/Geom/box")
     mesh.CreatePointsAttr(Vt.Vec3fArray([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]))
     mesh.CreateFaceVertexCountsAttr(Vt.IntArray([4]))
     mesh.CreateFaceVertexIndicesAttr(Vt.IntArray([0, 1, 2, 3]))
 
-    skel = UsdSkel.Skeleton.Define(stage, "/Character/Skel")
+    skel = UsdSkel.Skeleton.Define(stage, f"{skel_root_path}/Skel")
     skel.CreateJointsAttr(Vt.TokenArray(["root", "root/child"]))
     skel.CreateBindTransformsAttr(Vt.Matrix4dArray([Gf.Matrix4d(1), Gf.Matrix4d(1)]))
     skel.CreateRestTransformsAttr(Vt.Matrix4dArray([Gf.Matrix4d(1), Gf.Matrix4d(1)]))
 
-    anim = UsdSkel.Animation.Define(stage, "/Character/Skel/Anim")
+    anim_path = f"{skel_root_path}/Anim" if anim_sibling_of_skeleton else f"{skel_root_path}/Skel/Anim"
+    anim = UsdSkel.Animation.Define(stage, anim_path)
     anim.CreateJointsAttr(Vt.TokenArray(["root", "root/child"]))
     trans_attr = anim.CreateTranslationsAttr()
     trans_attr.Set(Vt.Vec3fArray([(0, 0, 0), (0, 1, 0)]), 1.0)
@@ -54,7 +73,7 @@ def _build_character_stage(path, with_blendshape=True):
     binding.CreateSkeletonRel().SetTargets([skel.GetPath()])
 
     if with_blendshape:
-        bs = UsdSkel.BlendShape.Define(stage, "/Character/Geom/box/blink")
+        bs = UsdSkel.BlendShape.Define(stage, f"{skel_root_path}/Geom/box/blink")
         bs.CreateOffsetsAttr(Vt.Vec3fArray([(0, 0, 0.1)] * 4))
         binding.CreateBlendShapesAttr(Vt.TokenArray(["blink"]))
         binding.CreateBlendShapeTargetsRel().SetTargets([bs.GetPath()])
@@ -66,7 +85,12 @@ def _build_character_stage(path, with_blendshape=True):
     skel_binding = UsdSkel.BindingAPI.Apply(skel.GetPrim())
     skel_binding.CreateAnimationSourceRel().SetTargets([anim.GetPath()])
 
-    stage.SetDefaultPrim(stage.GetPrimAtPath("/Character"))
+    if apply_binding_on_skel_root:
+        root_binding = UsdSkel.BindingAPI.Apply(stage.GetPrimAtPath(skel_root_path))
+        root_binding.CreateSkeletonRel().SetTargets([skel.GetPath()])
+        root_binding.CreateAnimationSourceRel().SetTargets([anim.GetPath()])
+
+    stage.SetDefaultPrim(stage.GetPrimAtPath(default_prim_path))
     stage.GetRootLayer().Save()
     return stage
 
@@ -257,3 +281,166 @@ def test_split_character_usd_no_skel_binding_raises(tmp_path):
 
     with pytest.raises(ValueError):
         split_character_usd(path)
+
+
+def test_split_character_usd_no_default_prim_raises(tmp_path):
+    path = str(tmp_path / "character.usda")
+    stage = _build_character_stage(path)
+    stage.ClearDefaultPrim()
+    stage.GetRootLayer().Save()
+
+    with pytest.raises(ValueError):
+        split_character_usd(path)
+
+
+def test_split_character_usd_cleans_up_partial_output_on_failure(tmp_path, monkeypatch):
+    import utils.character_usd_split as split_mod
+
+    path = str(tmp_path / "character.usda")
+    _build_character_stage(path)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(split_mod, "_write_skel_layer", _boom)
+
+    with pytest.raises(RuntimeError):
+        split_character_usd(path)
+
+    assert not os.path.exists(str(tmp_path / "character_geo.usd"))
+    assert not os.path.exists(str(tmp_path / "character_skel.usd"))
+    assert not os.path.exists(str(tmp_path / "character_anim.usd"))
+
+
+def test_write_anim_layer_copies_stage_time_metadata(tmp_path):
+    path = str(tmp_path / "character.usda")
+    stage = _build_character_stage(path)
+    stage.SetStartTimeCode(5)
+    stage.SetEndTimeCode(48)
+    stage.SetFramesPerSecond(30)
+    stage.SetTimeCodesPerSecond(30)
+    stage.GetRootLayer().Save()
+    bindings = _discover_bindings(stage)
+    anim_path = str(tmp_path / "character_anim.usd")
+
+    _write_anim_layer(stage, bindings, anim_path)
+
+    anim_stage = Usd.Stage.Open(anim_path)
+    assert anim_stage.GetStartTimeCode() == 5
+    assert anim_stage.GetEndTimeCode() == 48
+    assert anim_stage.GetFramesPerSecond() == 30
+    assert anim_stage.GetTimeCodesPerSecond() == 30
+
+
+def test_write_anim_layer_does_not_author_metadata_when_unauthored_on_source(tmp_path):
+    path = str(tmp_path / "character.usda")
+    stage = _build_character_stage(path)
+    bindings = _discover_bindings(stage)
+    anim_path = str(tmp_path / "character_anim.usd")
+
+    _write_anim_layer(stage, bindings, anim_path)
+
+    anim_stage = Usd.Stage.Open(anim_path)
+    assert not anim_stage.HasAuthoredMetadata("startTimeCode")
+    assert not anim_stage.HasAuthoredMetadata("endTimeCode")
+
+
+def test_write_skel_layer_copies_stage_up_axis_and_units(tmp_path):
+    path = str(tmp_path / "character.usda")
+    stage = _build_character_stage(path)
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    stage.GetRootLayer().Save()
+    bindings = _discover_bindings(stage)
+    geo_path = str(tmp_path / "character_geo.usd")
+    skel_path = str(tmp_path / "character_skel.usd")
+    _write_geo_layer(stage, bindings, geo_path)
+
+    _write_skel_layer(stage, bindings, geo_path, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    assert UsdGeom.GetStageUpAxis(skel_stage) == UsdGeom.Tokens.z
+    assert UsdGeom.GetStageMetersPerUnit(skel_stage) == 1.0
+
+
+def test_split_character_usd_skeleton_nested_two_levels_below_default_prim(tmp_path):
+    """Finding 1: SkelRoot/Skeleton nested below the stage's actual defaultPrim
+    used to crash _write_skel_layer's Sdf.CopySpec with a nonexistent-ancestor error.
+    """
+    path = str(tmp_path / "character.usda")
+    _build_character_stage(path, default_prim_path="/root", skel_root_path="/root/Character")
+
+    geo_path, skel_path, anim_path = split_character_usd(path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    skel_prim = skel_stage.GetPrimAtPath("/root/Character/Skel")
+    assert skel_prim.IsValid()
+    assert list(UsdSkel.Skeleton(skel_prim).GetJointsAttr().Get()) == ["root", "root/child"]
+
+    mesh_prim = skel_stage.GetPrimAtPath("/root/Character/Geom/box")
+    assert list(UsdGeom.Mesh(mesh_prim).GetPointsAttr().Get()) == [
+        Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
+    ]
+    assert list(UsdSkel.BindingAPI(mesh_prim).GetJointIndicesPrimvar().Get()) == [0, 0, 0, 0]
+
+
+def test_write_geo_layer_strips_skel_binding_api_applied_on_skel_root(tmp_path):
+    """Finding 2: SkelBindingAPI applied on the SkelRoot (not just the mesh)
+    used to leak the schema and a dangling skel:animationSource into geo.usd.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"), apply_binding_on_skel_root=True)
+    bindings = _discover_bindings(stage)
+    geo_path = str(tmp_path / "character_geo.usd")
+
+    _write_geo_layer(stage, bindings, geo_path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    for prim in geo_stage.Traverse():
+        assert "SkelBindingAPI" not in prim.GetAppliedSchemas()
+        assert not any(
+            p.startswith("skel:") or p.startswith("primvars:skel:") for p in prim.GetPropertyNames()
+        )
+
+
+def test_split_character_usd_no_dangling_animation_source_from_skel_root_binding(tmp_path):
+    """Finding 2 (end-to-end): a SkelBindingAPI on the SkelRoot must not
+    compose a dangling skel:animationSource into skel.usd via the geo.usd reference.
+    """
+    path = str(tmp_path / "character.usda")
+    _build_character_stage(path, apply_binding_on_skel_root=True)
+
+    geo_path, skel_path, anim_path = split_character_usd(path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    character_prim = skel_stage.GetPrimAtPath("/Character")
+    assert "SkelBindingAPI" not in character_prim.GetAppliedSchemas()
+    assert UsdSkel.BindingAPI(character_prim).GetAnimationSourceRel().GetTargets() == []
+
+
+def test_write_geo_layer_removes_sibling_animation_prim(tmp_path):
+    """Finding 5: an Animation prim that is a sibling of the Skeleton (not
+    nested under it) must still be removed from geo.usd, along with its time samples.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"), anim_sibling_of_skeleton=True)
+    bindings = _discover_bindings(stage)
+    geo_path = str(tmp_path / "character_geo.usd")
+
+    _write_geo_layer(stage, bindings, geo_path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    assert not geo_stage.GetPrimAtPath("/Character/Anim").IsValid()
+
+
+def test_split_character_usd_sibling_animation_end_to_end(tmp_path):
+    path = str(tmp_path / "character.usda")
+    _build_character_stage(path, anim_sibling_of_skeleton=True)
+
+    geo_path, skel_path, anim_path = split_character_usd(path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    assert not geo_stage.GetPrimAtPath("/Character/Anim").IsValid()
+
+    anim_stage = Usd.Stage.Open(anim_path)
+    anim_prim = anim_stage.GetPrimAtPath("/Character/Anim")
+    assert anim_prim.IsValid()
+    assert UsdSkel.Animation(anim_prim).GetTranslationsAttr().GetTimeSamples() == [1.0, 2.0]
