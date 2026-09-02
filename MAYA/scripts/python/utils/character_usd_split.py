@@ -31,6 +31,25 @@ class _SkelBinding:
         self.blend_shape_paths = blend_shape_paths
 
 
+def _define_ancestor_chain(layer: Sdf.Layer, path: Sdf.Path) -> None:
+    """Ensure every ancestor of ``path`` (down to but not including the
+    absolute root) has a ``def`` (not ``over``) prim spec in ``layer``.
+
+    ``Sdf.CopySpec`` requires the destination's ancestor path to already
+    exist as a spec, and ``Sdf.CreatePrimInLayer`` creates missing ancestors
+    as ``over`` by default. But USD's ``UsdPrim.IsDefined()`` walks the full
+    ancestor chain: a single ``over`` anywhere in it makes every descendant
+    invisible to ``Usd.Stage.Traverse()``'s default predicate, even one that
+    would otherwise resolve to ``def`` through a reference (confirmed
+    empirically -- a local ``over`` opinion suppresses a weaker referenced
+    ``def`` for the same prim). Every ancestor must be forced to ``def``
+    (typeless is fine) explicitly, not just the immediate parent.
+    """
+    for ancestor in path.GetParentPath().GetPrefixes():
+        ancestor_spec = Sdf.CreatePrimInLayer(layer, ancestor)
+        ancestor_spec.specifier = Sdf.SpecifierDef
+
+
 def _discover_bindings(stage: Usd.Stage) -> List[_SkelBinding]:
     """Resolve every skinning binding on the stage via UsdSkel.Cache.
 
@@ -78,34 +97,33 @@ def _discover_bindings(stage: Usd.Stage) -> List[_SkelBinding]:
     return result
 
 
-def _write_geo_layer(stage: Usd.Stage, bindings: List[_SkelBinding], geo_path: str) -> None:
+def _write_geo_layer(stage: Usd.Stage, geo_path: str) -> None:
     """Write a geometry-only copy of ``stage`` with all skeleton content removed.
 
     Copies the full input layer, then removes every Skeleton prim, every
-    Animation prim, and every BlendShape prim, and strips the applied
-    SkelBindingAPI schema plus all ``skel:``-namespaced properties from
-    every prim on the copied stage that carries them (not just the
-    skinned meshes -- the schema can be applied on a SkelRoot or other
-    ancestor too).
+    Animation prim, and every BlendShape prim -- found by type, not by the
+    discovered bindings list, since real mayaUSDExport output can contain
+    Skeleton/Animation prims that are never bound to any mesh (e.g. Maya
+    FK/IK control-rig joints exported as their own Skeleton+Animation pair).
+    Unbound skeleton content has no skinning role, so it belongs in neither
+    skel.usd nor anim.usd; geo.usd is the only place it would otherwise
+    survive, and it must not. Also strips the applied SkelBindingAPI schema
+    plus all ``skel:``-namespaced properties from every prim on the copied
+    stage that carries them (not just the skinned meshes -- the schema can
+    be applied on a SkelRoot or other ancestor too).
     """
     geo_layer = Sdf.Layer.CreateNew(geo_path)
     Sdf.CopySpec(stage.GetRootLayer(), Sdf.Path("/"), geo_layer, Sdf.Path("/"))
     geo_stage = Usd.Stage.Open(geo_layer)
 
-    for binding in bindings:
-        if geo_stage.GetPrimAtPath(binding.skeleton_path).IsValid():
-            geo_stage.RemovePrim(binding.skeleton_path)
-
-        # Removed independently of the Skeleton above: skel:animationSource
-        # allows the Animation prim to live anywhere, e.g. as a sibling of
-        # the Skeleton rather than nested under it, so it isn't guaranteed
-        # to be swept up by RemovePrim's recursion.
-        if binding.anim_path is not None and geo_stage.GetPrimAtPath(binding.anim_path).IsValid():
-            geo_stage.RemovePrim(binding.anim_path)
-
-        for bs_path in binding.blend_shape_paths:
-            if geo_stage.GetPrimAtPath(bs_path).IsValid():
-                geo_stage.RemovePrim(bs_path)
+    skel_content_paths = [
+        prim.GetPath()
+        for prim in geo_stage.TraverseAll()
+        if prim.IsA(UsdSkel.Skeleton) or prim.IsA(UsdSkel.Animation) or prim.IsA(UsdSkel.BlendShape)
+    ]
+    for prim_path in skel_content_paths:
+        if geo_stage.GetPrimAtPath(prim_path).IsValid():
+            geo_stage.RemovePrim(prim_path)
 
     # SkelBindingAPI can be applied on any prim -- the SkelRoot or another
     # ancestor, not only the skinned mesh -- since UsdSkel bindings are
@@ -174,14 +192,7 @@ def _write_skel_layer(
     skel_stage.SetDefaultPrim(root_prim)
 
     for binding in bindings:
-        skeleton_parent = binding.skeleton_path.GetParentPath()
-        if not skeleton_parent.isEmpty and skeleton_parent != Sdf.Path.absoluteRootPath:
-            # CopySpec requires the destination ancestor to already exist.
-            # Only new ancestors are downgraded to `over` -- if this path
-            # is the defaultPrim (already `def`-ed above), leave it as-is.
-            ancestor_spec = Sdf.CreatePrimInLayer(skel_stage.GetRootLayer(), skeleton_parent)
-            if ancestor_spec.specifier != Sdf.SpecifierDef:
-                ancestor_spec.specifier = Sdf.SpecifierOver
+        _define_ancestor_chain(skel_stage.GetRootLayer(), binding.skeleton_path)
         Sdf.CopySpec(
             stage.GetRootLayer(), binding.skeleton_path,
             skel_stage.GetRootLayer(), binding.skeleton_path,
@@ -253,13 +264,7 @@ def _write_anim_layer(stage: Usd.Stage, bindings: List[_SkelBinding], anim_path:
     for binding in bindings:
         if binding.anim_path is None:
             continue
-        parent_path = binding.anim_path.GetParentPath()
-        if not parent_path.isEmpty and parent_path != Sdf.Path.absoluteRootPath:
-            # CopySpec requires the destination ancestor to already exist.
-            # `over` (not `def`) so this file never claims to newly-define
-            # that ancestor path if it's ever sublayered against skel.usd.
-            ancestor_spec = Sdf.CreatePrimInLayer(anim_stage.GetRootLayer(), parent_path)
-            ancestor_spec.specifier = Sdf.SpecifierOver
+        _define_ancestor_chain(anim_stage.GetRootLayer(), binding.anim_path)
         Sdf.CopySpec(
             stage.GetRootLayer(), binding.anim_path,
             anim_stage.GetRootLayer(), binding.anim_path,
@@ -313,7 +318,7 @@ def split_character_usd(
     anim_path = os.path.join(out_dir, f"{base}_anim.usd")
 
     try:
-        _write_geo_layer(stage, bindings, geo_path)
+        _write_geo_layer(stage, geo_path)
         _write_skel_layer(stage, bindings, geo_path, skel_path)
         _write_anim_layer(stage, bindings, anim_path)
     except Exception:

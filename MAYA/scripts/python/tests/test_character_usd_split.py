@@ -128,10 +128,9 @@ def test_discover_bindings_returns_empty_for_stage_without_skinning(tmp_path):
 
 def test_write_geo_layer_strips_skeleton_content(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"))
-    bindings = _discover_bindings(stage)
     geo_path = str(tmp_path / "character_geo.usd")
 
-    _write_geo_layer(stage, bindings, geo_path)
+    _write_geo_layer(stage, geo_path)
 
     geo_stage = Usd.Stage.Open(geo_path)
     mesh_prim = geo_stage.GetPrimAtPath("/Character/Geom/box")
@@ -148,10 +147,9 @@ def test_write_geo_layer_strips_skeleton_content(tmp_path):
 
 def test_write_geo_layer_no_blendshape(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"), with_blendshape=False)
-    bindings = _discover_bindings(stage)
     geo_path = str(tmp_path / "character_geo.usd")
 
-    _write_geo_layer(stage, bindings, geo_path)
+    _write_geo_layer(stage, geo_path)
 
     geo_stage = Usd.Stage.Open(geo_path)
     assert geo_stage.GetPrimAtPath("/Character/Geom/box").IsValid()
@@ -162,7 +160,7 @@ def test_write_skel_layer_references_geo_and_overlays_skinning(tmp_path):
     bindings = _discover_bindings(stage)
     geo_path = str(tmp_path / "character_geo.usd")
     skel_path = str(tmp_path / "character_skel.usd")
-    _write_geo_layer(stage, bindings, geo_path)
+    _write_geo_layer(stage, geo_path)
 
     _write_skel_layer(stage, bindings, geo_path, skel_path)
 
@@ -199,7 +197,7 @@ def test_write_skel_layer_no_blendshape(tmp_path):
     bindings = _discover_bindings(stage)
     geo_path = str(tmp_path / "character_geo.usd")
     skel_path = str(tmp_path / "character_skel.usd")
-    _write_geo_layer(stage, bindings, geo_path)
+    _write_geo_layer(stage, geo_path)
 
     _write_skel_layer(stage, bindings, geo_path, skel_path)
 
@@ -354,7 +352,7 @@ def test_write_skel_layer_copies_stage_up_axis_and_units(tmp_path):
     bindings = _discover_bindings(stage)
     geo_path = str(tmp_path / "character_geo.usd")
     skel_path = str(tmp_path / "character_skel.usd")
-    _write_geo_layer(stage, bindings, geo_path)
+    _write_geo_layer(stage, geo_path)
 
     _write_skel_layer(stage, bindings, geo_path, skel_path)
 
@@ -389,10 +387,9 @@ def test_write_geo_layer_strips_skel_binding_api_applied_on_skel_root(tmp_path):
     used to leak the schema and a dangling skel:animationSource into geo.usd.
     """
     stage = _build_character_stage(str(tmp_path / "character.usda"), apply_binding_on_skel_root=True)
-    bindings = _discover_bindings(stage)
     geo_path = str(tmp_path / "character_geo.usd")
 
-    _write_geo_layer(stage, bindings, geo_path)
+    _write_geo_layer(stage, geo_path)
 
     geo_stage = Usd.Stage.Open(geo_path)
     for prim in geo_stage.Traverse():
@@ -422,10 +419,9 @@ def test_write_geo_layer_removes_sibling_animation_prim(tmp_path):
     nested under it) must still be removed from geo.usd, along with its time samples.
     """
     stage = _build_character_stage(str(tmp_path / "character.usda"), anim_sibling_of_skeleton=True)
-    bindings = _discover_bindings(stage)
     geo_path = str(tmp_path / "character_geo.usd")
 
-    _write_geo_layer(stage, bindings, geo_path)
+    _write_geo_layer(stage, geo_path)
 
     geo_stage = Usd.Stage.Open(geo_path)
     assert not geo_stage.GetPrimAtPath("/Character/Anim").IsValid()
@@ -444,3 +440,85 @@ def test_split_character_usd_sibling_animation_end_to_end(tmp_path):
     anim_prim = anim_stage.GetPrimAtPath("/Character/Anim")
     assert anim_prim.IsValid()
     assert UsdSkel.Animation(anim_prim).GetTranslationsAttr().GetTimeSamples() == [1.0, 2.0]
+
+
+def _add_unbound_skeleton(stage, path="/Character/UnboundRig"):
+    """A Skeleton+Animation pair with no skinning binding to any mesh --
+    matches real mayaUSDExport output for Maya FK/IK control-rig joints,
+    which get their own Skeleton+Animation prim even though they never
+    drive a mesh's skin weights.
+    """
+    skel = UsdSkel.Skeleton.Define(stage, path)
+    skel.CreateJointsAttr(Vt.TokenArray(["ctrl"]))
+    anim = UsdSkel.Animation.Define(stage, f"{path}/Animation")
+    anim.CreateJointsAttr(Vt.TokenArray(["ctrl"]))
+    anim.CreateTranslationsAttr().Set(Vt.Vec3fArray([(0, 0, 0)]), 1.0)
+    UsdSkel.BindingAPI.Apply(skel.GetPrim()).CreateAnimationSourceRel().SetTargets([anim.GetPath()])
+    return skel, anim
+
+
+def test_write_geo_layer_removes_unbound_skeleton_and_animation(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    unbound_skel, unbound_anim = _add_unbound_skeleton(stage)
+    stage.GetRootLayer().Save()
+    geo_path = str(tmp_path / "character_geo.usd")
+
+    _write_geo_layer(stage, geo_path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    assert not geo_stage.GetPrimAtPath(unbound_skel.GetPath()).IsValid()
+    assert not geo_stage.GetPrimAtPath(unbound_anim.GetPath()).IsValid()
+
+
+def test_split_character_usd_unbound_skeleton_excluded_from_all_outputs(tmp_path):
+    path = str(tmp_path / "character.usda")
+    stage = _build_character_stage(path)
+    unbound_skel, unbound_anim = _add_unbound_skeleton(stage)
+    stage.GetRootLayer().Save()
+
+    geo_path, skel_path, anim_path = split_character_usd(path)
+
+    for output_path in (geo_path, skel_path, anim_path):
+        output_stage = Usd.Stage.Open(output_path)
+        assert not output_stage.GetPrimAtPath(unbound_skel.GetPath()).IsValid()
+        assert not output_stage.GetPrimAtPath(unbound_anim.GetPath()).IsValid()
+
+
+def test_write_skel_layer_content_visible_via_default_traverse(tmp_path):
+    """A prior bug authored the Skeleton's ancestor chain with `over` specs,
+    which USD's IsDefined() treats as invisible to Usd.Stage.Traverse()'s
+    default predicate even though direct GetPrimAtPath() access still
+    resolved values -- meaning skel.usd would appear empty in usdview or any
+    other tool that walks the stage instead of hardcoding paths.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    bindings = _discover_bindings(stage)
+    geo_path = str(tmp_path / "character_geo.usd")
+    skel_path = str(tmp_path / "character_skel.usd")
+    _write_geo_layer(stage, geo_path)
+
+    _write_skel_layer(stage, bindings, geo_path, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    traversed = {str(p.GetPath()) for p in skel_stage.Traverse()}
+    assert "/Character/Skel" in traversed
+    assert "/Character/Geom/box" in traversed
+    assert "/Character/Geom/box/blink" in traversed
+
+
+def test_write_anim_layer_content_visible_via_default_traverse(tmp_path):
+    """Same class of bug as test_write_skel_layer_content_visible_via_default_traverse,
+    but more severe for anim.usd: it has no defaultPrim and references
+    nothing, so an all-`over` ancestor chain leaves no defining opinion
+    anywhere in the file at all -- the Animation prim would be invisible to
+    Traverse() even though GetPrimAtPath() still resolves its attributes.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    bindings = _discover_bindings(stage)
+    anim_path = str(tmp_path / "character_anim.usd")
+
+    _write_anim_layer(stage, bindings, anim_path)
+
+    anim_stage = Usd.Stage.Open(anim_path)
+    traversed = {str(p.GetPath()) for p in anim_stage.Traverse()}
+    assert "/Character/Skel/Anim" in traversed
