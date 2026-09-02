@@ -238,8 +238,10 @@ animation + blendshape）拆成三個獨立檔案：
 - `<name>_geo.usd`：純幾何，不含任何 skinning / skeleton 資料（不論該
   mesh 原本有沒有被蒙皮綁定）。
 - `<name>_skel.usd`：只含**有實際蒙皮綁定**的 `Skeleton`／`BlendShape`
-  prim，以及疊加在 mesh 路徑上的 skinning primvars（`jointIndices` /
-  `jointWeights` / `geomBindTransform`）與 `skel:skeleton` 關係——這些
+  prim，以及疊加在 mesh 路徑上的完整 skinning 資料（`jointIndices` /
+  `jointWeights` / `geomBindTransform` / `skel:joints`（局部 joint
+  子集合對照表，若有 author）/ `skel:skinningMethod`（`classicLinear`
+  或 `dualQuaternion`，若有 author）與 `skel:skeleton` 關係）——這些
   mesh 路徑本身是沒有型別的 `over`/`def`，不含幾何資料。
 - `<name>_anim.usd`：只含**有實際蒙皮綁定**之骨架的 `UsdSkelAnimation`
   （joint 動畫時間量資料，以及 blendshape 的 `blendShapeWeights`）。
@@ -277,8 +279,6 @@ geo_path, skel_path, anim_path = split_character_usd("character.usd")
 - blendshape 的靜態 target 資料歸 `_skel.usd`（跟 Skeleton 同類，屬於「可以
   怎麼變形」的結構資料）；`blendShapeWeights` 時間量資料歸 `_anim.usd`
   （跟 joint 動畫共用同一個 `UsdSkelAnimation` prim，不需要額外拆檔）。
-- 三個輸出檔案都不會 author `skel:animationSource`——把哪個 `_anim.usd`
-  接回哪個 `_skel.usd`，留給下游 pipeline 決定。
 - 找不到輸入檔案 `raise FileNotFoundError`；輸入完全沒有 UsdSkel binding
   （純靜態 geo，沒有骨架）`raise ValueError`。
 
