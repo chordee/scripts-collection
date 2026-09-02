@@ -234,6 +234,31 @@ def test_write_skel_layer_no_blendshape(tmp_path):
     assert not skel_stage.GetPrimAtPath("/Character/Geom/box/blink").IsValid()
 
 
+def test_write_skel_layer_copies_joints_mapper_and_skinning_method(tmp_path):
+    """A real mayaUSDExport character had two meshes each authoring their own
+    skel:joints (a local joint order/subset remapping jointIndices against
+    something other than the Skeleton's full joint list) and
+    skel:skinningMethod=dualQuaternion. Neither was being copied, so
+    jointIndices were silently reinterpreted against the full skeleton and
+    dualQuaternion silently fell back to classicLinear -- both producing
+    visibly wrong, distorted skinning once geo.usd + skel.usd were composed.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    mesh_binding = UsdSkel.BindingAPI(stage.GetPrimAtPath("/Character/Geom/box"))
+    mesh_binding.CreateJointsAttr(Vt.TokenArray(["root/child"]))
+    mesh_binding.CreateSkinningMethodAttr(UsdSkel.Tokens.dualQuaternion)
+    stage.GetRootLayer().Save()
+    bindings = _discover_bindings(stage)
+    skel_path = str(tmp_path / "character_skel.usd")
+
+    _write_skel_layer(stage, bindings, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    out_binding = UsdSkel.BindingAPI(skel_stage.GetPrimAtPath("/Character/Geom/box"))
+    assert list(out_binding.GetJointsAttr().Get()) == ["root/child"]
+    assert out_binding.GetSkinningMethodAttr().Get() == UsdSkel.Tokens.dualQuaternion
+
+
 def test_write_anim_layer_is_standalone_with_correct_time_samples(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"))
     bindings = _discover_bindings(stage)
