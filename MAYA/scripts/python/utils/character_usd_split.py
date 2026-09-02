@@ -97,7 +97,12 @@ def _discover_bindings(stage: Usd.Stage) -> List[_SkelBinding]:
     return result
 
 
-def _write_geo_layer(stage: Usd.Stage, geo_path: str) -> None:
+def _write_geo_layer(
+    stage: Usd.Stage,
+    geo_path: str,
+    hide_curves: bool = False,
+    curves_purpose_guide: bool = False,
+) -> None:
     """Write a geometry-only copy of ``stage`` with all skeleton content removed.
 
     Copies the full input layer, then removes every Skeleton prim, every
@@ -111,6 +116,11 @@ def _write_geo_layer(stage: Usd.Stage, geo_path: str) -> None:
     plus all ``skel:``-namespaced properties from every prim on the copied
     stage that carries them (not just the skinned meshes -- the schema can
     be applied on a SkelRoot or other ancestor too).
+
+    ``hide_curves``/``curves_purpose_guide`` set a static (non-time-sampled)
+    ``visibility``/``purpose`` on every ``BasisCurves``/``NurbsCurves`` prim
+    -- these are typically rig control curves or guides, not renderable
+    geometry, but mayaUSDExport doesn't mark them as such on its own.
     """
     geo_layer = Sdf.Layer.CreateNew(geo_path)
     Sdf.CopySpec(stage.GetRootLayer(), Sdf.Path("/"), geo_layer, Sdf.Path("/"))
@@ -138,6 +148,16 @@ def _write_geo_layer(stage: Usd.Stage, geo_path: str) -> None:
             if prop_name.startswith("primvars:skel:") or prop_name.startswith("skel:"):
                 prim.RemoveProperty(prop_name)
 
+    if hide_curves or curves_purpose_guide:
+        for prim in geo_stage.Traverse():
+            if not (prim.IsA(UsdGeom.BasisCurves) or prim.IsA(UsdGeom.NurbsCurves)):
+                continue
+            imageable = UsdGeom.Imageable(prim)
+            if hide_curves:
+                imageable.CreateVisibilityAttr().Set(UsdGeom.Tokens.invisible)
+            if curves_purpose_guide:
+                imageable.CreatePurposeAttr().Set(UsdGeom.Tokens.guide)
+
     geo_stage.GetRootLayer().Save()
     _logger.info("Wrote geo-only USD: %s", geo_path)
 
@@ -162,6 +182,7 @@ def _write_skel_layer(
     stage: Usd.Stage,
     bindings: List[_SkelBinding],
     skel_path: str,
+    hide_skeleton: bool = False,
 ) -> None:
     """Write a standalone stage carrying the skeleton and skinning overlay.
 
@@ -186,6 +207,8 @@ def _write_skel_layer(
     and simply dangles harmlessly otherwise. A downstream consumer swapping
     in a different anim.usd per shot only needs to keep the Animation prim
     at the same path -- no re-authoring of this relationship required.
+    ``hide_skeleton`` sets a static ``visibility=invisible`` on each copied
+    Skeleton prim (skeletons are typically not meant to render directly).
     """
     skel_stage = Usd.Stage.CreateNew(skel_path)
 
@@ -215,6 +238,8 @@ def _write_skel_layer(
             anim_source_rel.SetTargets([binding.anim_path])
         else:
             anim_source_rel.ClearTargets(True)
+        if hide_skeleton:
+            UsdGeom.Imageable(copied_skel_prim).CreateVisibilityAttr().Set(UsdGeom.Tokens.invisible)
 
         for mesh_path in binding.skinned_mesh_paths:
             src_mesh_binding = UsdSkel.BindingAPI(stage.GetPrimAtPath(mesh_path))
@@ -315,6 +340,9 @@ def _write_anim_layer(stage: Usd.Stage, bindings: List[_SkelBinding], anim_path:
 def split_character_usd(
     character_usd_path: str,
     output_dir: Optional[str] = None,
+    hide_curves: bool = False,
+    hide_skeleton: bool = False,
+    curves_purpose_guide: bool = False,
 ) -> Tuple[str, str, str]:
     """Split a combined character USD (geo + skeleton + animation) into
     three independent files: <name>_geo.usd, <name>_skel.usd, <name>_anim.usd.
@@ -333,6 +361,14 @@ def split_character_usd(
             by e.g. ``cmds.mayaUSDExport(...)``. Must exist on disk.
         output_dir: Directory for the three outputs. ``None`` (default)
             writes them next to ``character_usd_path``.
+        hide_curves: Set a static ``visibility=invisible`` on every
+            ``BasisCurves``/``NurbsCurves`` prim in ``_geo.usd`` (typically
+            rig control curves, not renderable geometry).
+        hide_skeleton: Set a static ``visibility=invisible`` on the
+            ``Skeleton`` prim(s) in ``_skel.usd``.
+        curves_purpose_guide: Set ``purpose=guide`` on every
+            ``BasisCurves``/``NurbsCurves`` prim in ``_geo.usd``.
+            Independent of ``hide_curves`` -- both can be set together.
 
     Returns:
         ``(geo_path, skel_path, anim_path)``.
@@ -360,8 +396,8 @@ def split_character_usd(
     anim_path = os.path.join(out_dir, f"{base}_anim.usd")
 
     try:
-        _write_geo_layer(stage, geo_path)
-        _write_skel_layer(stage, bindings, skel_path)
+        _write_geo_layer(stage, geo_path, hide_curves=hide_curves, curves_purpose_guide=curves_purpose_guide)
+        _write_skel_layer(stage, bindings, skel_path, hide_skeleton=hide_skeleton)
         _write_anim_layer(stage, bindings, anim_path)
     except Exception:
         # Don't leave a partial split on disk -- downstream tooling globbing

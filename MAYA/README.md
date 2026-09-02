@@ -266,6 +266,21 @@ reference、payload 還是 sublayer——`split_character_usd` 不預設任何�
 它們——只有透過 `UsdSkel.Cache.ComputeSkelBindings` 真正解析出蒙皮綁定
 關係的骨架才會進到 `_skel.usd`／`_anim.usd`。
 
+三個選用旗標（預設都是 `False`，不影響既有行為）：
+
+```python
+split_character_usd(
+    "character.usd",
+    hide_curves=True,           # _geo.usd 裡的 BasisCurves/NurbsCurves 設 visibility=invisible
+    hide_skeleton=True,         # _skel.usd 裡的 Skeleton 設 visibility=invisible
+    curves_purpose_guide=True,  # _geo.usd 裡的 BasisCurves/NurbsCurves 設 purpose=guide
+)
+```
+
+`hide_curves`／`curves_purpose_guide` 針對的是同一批 curve prim，兩者互相
+獨立、可以同時開啟；`visibility`/`purpose` 都是寫死的靜態值，不是
+time-sampled。
+
 不是 Maya-USD Export Chaser plugin，單純函式，匯出後手動呼叫：
 
 ```python
