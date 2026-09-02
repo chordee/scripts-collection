@@ -16,6 +16,7 @@ MAYA/
         │   └── usd_tab.py       USD tab：SkelRoot、USD Preview Shader、Materials Assignment、Arnold Materials 匯出
         └── utils/               純邏輯函式 / 類別，不依賴 PySide2
             ├── arnold_to_usd.py
+            ├── character_usd_split.py
             ├── compare_bindposes.py
             ├── materials_assignment.py
             ├── usd_attrs.py
@@ -222,6 +223,42 @@ Maya USD plugin（`mayaUsdPlugin`）必須可載入；`ensure_usd_plugin()` 會�
 - `add_sublayer` 比對 sublayer 時做路徑正規化（forward slash + 折疊冗餘 `.`），避免 `a/b.usd` 與 `./a/b.usd` 重複加入。
 - `add_reference` 預設用 `Usd.EditContext` 強制 author 在 root layer；若要沿用當前 edit target，把 `on_root_layer=False`。
 - 訊息透過 `logging.getLogger(__name__)`，呼叫端可自行設 level、轉接 handler。
+
+### `character_usd_split`
+
+```python
+from utils.character_usd_split import split_character_usd
+
+geo_path, skel_path, anim_path = split_character_usd("character.usd")
+```
+
+把 `mayaUSDExport` 匯出的合併角色 USD（geo + UsdSkel skinning + skeleton +
+animation + blendshape）拆成三個獨立檔案：
+
+- `<name>_geo.usd`：純幾何，不含任何 skinning / skeleton 資料。
+- `<name>_skel.usd`：`references` `_geo.usd`（不重複 mesh 點資料），疊加
+  skinning primvars（`jointIndices` / `jointWeights` / `geomBindTransform`）
+  與 `skel:skeleton` 關係，並包含真正的 `Skeleton` 與 `BlendShape` prim。
+- `<name>_anim.usd`：完全獨立，只含 `UsdSkelAnimation`（joint 動畫時間量
+  資料，以及 blendshape 的 `blendShapeWeights`）。
+
+不是 Maya-USD Export Chaser plugin，單純函式，匯出後手動呼叫：
+
+```python
+cmds.mayaUSDExport(file="character.usd", ...)
+geo_path, skel_path, anim_path = split_character_usd("character.usd")
+```
+
+- 用 `UsdSkel.Cache` + `UsdSkel.BindingAPI` 做 schema-based 探索，不假設
+  prim 路徑深度；但 `SkelRoot` 到被綁定 mesh 之間，中繼 prim 必須有明確型別
+  （`Xform`/`Scope`），沒有型別的中繼 prim 會讓探索找不到 skinning target。
+- blendshape 的靜態 target 資料歸 `_skel.usd`（跟 Skeleton 同類，屬於「可以
+  怎麼變形」的結構資料）；`blendShapeWeights` 時間量資料歸 `_anim.usd`
+  （跟 joint 動畫共用同一個 `UsdSkelAnimation` prim，不需要額外拆檔）。
+- 三個輸出檔案都不會 author `skel:animationSource`——把哪個 `_anim.usd`
+  接回哪個 `_skel.usd`，留給下游 pipeline 決定。
+- 找不到輸入檔案 `raise FileNotFoundError`；輸入完全沒有 UsdSkel binding
+  （純靜態 geo，沒有骨架）`raise ValueError`。
 
 ## 相依
 
