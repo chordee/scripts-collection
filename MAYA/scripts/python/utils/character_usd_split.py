@@ -196,3 +196,81 @@ def _write_skel_layer(
 
     skel_stage.GetRootLayer().Save()
     _logger.info("Wrote skeleton+binding USD: %s (references %s)", skel_path, geo_relpath)
+
+
+def _write_anim_layer(stage: Usd.Stage, bindings: List[_SkelBinding], anim_path: str) -> None:
+    """Write a standalone copy of every Animation prim found by discovery.
+
+    References nothing: the output is meant to be swappable per-shot
+    against whatever skel.usd it's eventually paired with downstream.
+    """
+    anim_stage = Usd.Stage.CreateNew(anim_path)
+
+    for binding in bindings:
+        if binding.anim_path is None:
+            continue
+        parent_path = binding.anim_path.GetParentPath()
+        if not parent_path.isEmpty and parent_path != Sdf.Path.absoluteRootPath:
+            # CopySpec requires the destination ancestor to already exist.
+            # `over` (not `def`) so this file never claims to newly-define
+            # that ancestor path if it's ever sublayered against skel.usd.
+            ancestor_spec = Sdf.CreatePrimInLayer(anim_stage.GetRootLayer(), parent_path)
+            ancestor_spec.specifier = Sdf.SpecifierOver
+        Sdf.CopySpec(
+            stage.GetRootLayer(), binding.anim_path,
+            anim_stage.GetRootLayer(), binding.anim_path,
+        )
+
+    anim_stage.GetRootLayer().Save()
+    _logger.info("Wrote standalone animation USD: %s", anim_path)
+
+
+def split_character_usd(
+    character_usd_path: str,
+    output_dir: Optional[str] = None,
+) -> Tuple[str, str, str]:
+    """Split a combined character USD (geo + skeleton + animation) into
+    three independent files: <name>_geo.usd, <name>_skel.usd, <name>_anim.usd.
+
+    ``_skel.usd`` references ``_geo.usd`` (to avoid duplicating mesh point
+    data); ``_anim.usd`` is fully standalone. Neither file authors
+    ``skel:animationSource`` — wiring a specific anim clip to the rig is a
+    downstream pipeline decision.
+
+    Args:
+        character_usd_path: Path to the combined character USD, as written
+            by e.g. ``cmds.mayaUSDExport(...)``. Must exist on disk.
+        output_dir: Directory for the three outputs. ``None`` (default)
+            writes them next to ``character_usd_path``.
+
+    Returns:
+        ``(geo_path, skel_path, anim_path)``.
+
+    Raises:
+        FileNotFoundError: If ``character_usd_path`` does not exist.
+        ValueError: If the stage has no resolvable UsdSkel binding at all
+            (nothing to split — this function is for rigged characters).
+    """
+    if not os.path.isfile(character_usd_path):
+        raise FileNotFoundError(f"USD file not found: {character_usd_path}")
+
+    stage = Usd.Stage.Open(character_usd_path)
+    bindings = _discover_bindings(stage)
+    if not bindings:
+        raise ValueError(f"No UsdSkel bindings found in: {character_usd_path}")
+
+    out_dir = output_dir or os.path.dirname(os.path.abspath(character_usd_path))
+    base = os.path.splitext(os.path.basename(character_usd_path))[0]
+    geo_path = os.path.join(out_dir, f"{base}_geo.usd")
+    skel_path = os.path.join(out_dir, f"{base}_skel.usd")
+    anim_path = os.path.join(out_dir, f"{base}_anim.usd")
+
+    _write_geo_layer(stage, bindings, geo_path)
+    _write_skel_layer(stage, bindings, geo_path, skel_path)
+    _write_anim_layer(stage, bindings, anim_path)
+
+    _logger.info(
+        "Split %s -> geo=%s skel=%s anim=%s",
+        character_usd_path, geo_path, skel_path, anim_path,
+    )
+    return geo_path, skel_path, anim_path

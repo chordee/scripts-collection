@@ -4,13 +4,21 @@ Pure ``pxr`` — no Maya session required. Run under hython or any Python
 with ``pxr`` (``pip install usd-core``) available.
 """
 
+import os
+
 import pytest
 
 pytest.importorskip("pxr")
 
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdSkel, Vt
 
-from utils.character_usd_split import _discover_bindings, _write_geo_layer, _write_skel_layer
+from utils.character_usd_split import (
+    _discover_bindings,
+    _write_anim_layer,
+    _write_geo_layer,
+    _write_skel_layer,
+    split_character_usd,
+)
 
 
 def _build_character_stage(path, with_blendshape=True):
@@ -175,3 +183,77 @@ def test_write_skel_layer_no_blendshape(tmp_path):
     mesh_binding = UsdSkel.BindingAPI(skel_stage.GetPrimAtPath("/Character/Geom/box"))
     assert mesh_binding.GetBlendShapesAttr().Get() is None
     assert not skel_stage.GetPrimAtPath("/Character/Geom/box/blink").IsValid()
+
+
+def test_write_anim_layer_is_standalone_with_correct_time_samples(tmp_path):
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    bindings = _discover_bindings(stage)
+    anim_path = str(tmp_path / "character_anim.usd")
+
+    _write_anim_layer(stage, bindings, anim_path)
+
+    anim_stage = Usd.Stage.Open(anim_path)
+    assert list(anim_stage.GetRootLayer().subLayerPaths) == []
+
+    anim_prim = anim_stage.GetPrimAtPath("/Character/Skel/Anim")
+    assert anim_prim.IsValid()
+    anim_schema = UsdSkel.Animation(anim_prim)
+    assert anim_schema.GetTranslationsAttr().GetTimeSamples() == [1.0, 2.0]
+    assert list(anim_schema.GetTranslationsAttr().Get(2.0)) == [Gf.Vec3f(0, 0, 0), Gf.Vec3f(0, 2, 0)]
+    assert anim_schema.GetBlendShapeWeightsAttr().GetTimeSamples() == [1.0, 2.0]
+    assert list(anim_schema.GetBlendShapeWeightsAttr().Get(2.0)) == [1.0]
+
+
+def test_split_character_usd_end_to_end(tmp_path):
+    src_path = str(tmp_path / "character.usda")
+    _build_character_stage(src_path)
+
+    geo_path, skel_path, anim_path = split_character_usd(src_path)
+
+    assert geo_path == str(tmp_path / "character_geo.usd")
+    assert skel_path == str(tmp_path / "character_skel.usd")
+    assert anim_path == str(tmp_path / "character_anim.usd")
+    assert os.path.exists(geo_path)
+    assert os.path.exists(skel_path)
+    assert os.path.exists(anim_path)
+
+    # Spot-check the composed skel.usd actually resolves geometry + skinning together.
+    skel_stage = Usd.Stage.Open(skel_path)
+    mesh_prim = skel_stage.GetPrimAtPath("/Character/Geom/box")
+    assert list(UsdGeom.Mesh(mesh_prim).GetPointsAttr().Get()) == [
+        Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
+    ]
+    assert list(UsdSkel.BindingAPI(mesh_prim).GetJointIndicesPrimvar().Get()) == [0, 0, 0, 0]
+
+
+def test_split_character_usd_custom_output_dir(tmp_path):
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    src_path = str(src_dir / "character.usda")
+    _build_character_stage(src_path)
+
+    geo_path, skel_path, anim_path = split_character_usd(src_path, output_dir=str(out_dir))
+
+    assert os.path.dirname(geo_path) == str(out_dir)
+    assert os.path.dirname(skel_path) == str(out_dir)
+    assert os.path.dirname(anim_path) == str(out_dir)
+    assert os.path.exists(geo_path)
+    assert os.path.exists(skel_path)
+    assert os.path.exists(anim_path)
+
+
+def test_split_character_usd_missing_file_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        split_character_usd(str(tmp_path / "nope.usd"))
+
+
+def test_split_character_usd_no_skel_binding_raises(tmp_path):
+    path = str(tmp_path / "plain.usda")
+    stage = Usd.Stage.CreateNew(path)
+    UsdGeom.Mesh.Define(stage, "/Plain")
+    stage.GetRootLayer().Save()
+
+    with pytest.raises(ValueError):
+        split_character_usd(path)
