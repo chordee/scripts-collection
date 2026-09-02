@@ -198,9 +198,14 @@ def test_write_skel_layer_is_standalone_and_composes_with_geo(tmp_path):
 
     skel_prim = skel_stage.GetPrimAtPath("/Character/Skel")
     assert list(UsdSkel.Skeleton(skel_prim).GetJointsAttr().Get()) == ["root", "root/child"]
-    assert UsdSkel.BindingAPI(skel_prim).GetAnimationSourceRel().GetTargets() == []
+    # Points at the Animation prim's path in anim.usd's shared namespace --
+    # resolves once both files are composed together, dangles harmlessly
+    # otherwise. Not a reference to anim.usd itself.
+    assert UsdSkel.BindingAPI(skel_prim).GetAnimationSourceRel().GetTargets() == [
+        Sdf.Path("/Character/Skel/Anim")
+    ]
 
-    # The Anim prim must NOT leak into skel.usd -- it belongs only in anim.usd.
+    # The Anim prim itself must NOT leak into skel.usd -- it belongs only in anim.usd.
     assert not skel_stage.GetPrimAtPath("/Character/Skel/Anim").IsValid()
 
     blink_prim = skel_stage.GetPrimAtPath("/Character/Geom/box/blink")
@@ -238,6 +243,9 @@ def test_write_anim_layer_is_standalone_with_correct_time_samples(tmp_path):
 
     anim_stage = Usd.Stage.Open(anim_path)
     assert list(anim_stage.GetRootLayer().subLayerPaths) == []
+    # Shares geo.usd/skel.usd's defaultPrim so a plain AddReference(anim_path)
+    # (no explicit prim path) resolves instead of composing nothing.
+    assert anim_stage.GetDefaultPrim().GetPath() == Sdf.Path("/Character")
 
     anim_prim = anim_stage.GetPrimAtPath("/Character/Skel/Anim")
     assert anim_prim.IsValid()
@@ -272,6 +280,31 @@ def test_split_character_usd_end_to_end(tmp_path):
         Gf.Vec3f(0, 0, 0), Gf.Vec3f(1, 0, 0), Gf.Vec3f(1, 1, 0), Gf.Vec3f(0, 1, 0),
     ]
     assert list(UsdSkel.BindingAPI(mesh_prim).GetJointIndicesPrimvar().Get()) == [0, 0, 0, 0]
+
+
+def test_split_character_usd_sublayered_together_actually_animates(tmp_path):
+    """The real bug a user hit manually: sublayering all three outputs
+    together produced a Skeleton stuck in bind pose because skel.usd never
+    pointed skel:animationSource at anim.usd's Animation prim. Joint
+    transforms must differ between frames once all three are combined.
+    """
+    src_path = str(tmp_path / "character.usda")
+    _build_character_stage(src_path)
+
+    geo_path, skel_path, anim_path = split_character_usd(src_path)
+
+    composed = Usd.Stage.CreateInMemory()
+    composed.GetRootLayer().subLayerPaths = [anim_path, skel_path, geo_path]
+
+    cache = UsdSkel.Cache()
+    skel_root = UsdSkel.Root(composed.GetPrimAtPath("/Character"))
+    cache.Populate(skel_root, Usd.PrimDefaultPredicate)
+    skel_query = cache.GetSkelQuery(UsdSkel.Skeleton(composed.GetPrimAtPath("/Character/Skel")))
+    assert skel_query.GetAnimQuery()
+
+    transforms_at_1 = skel_query.ComputeJointSkelTransforms(1.0)
+    transforms_at_2 = skel_query.ComputeJointSkelTransforms(2.0)
+    assert transforms_at_1 != transforms_at_2
 
 
 def test_split_character_usd_custom_output_dir(tmp_path):
@@ -428,8 +461,9 @@ def test_write_geo_layer_strips_skel_binding_api_applied_on_skel_root(tmp_path):
 
 
 def test_split_character_usd_no_dangling_animation_source_from_skel_root_binding(tmp_path):
-    """Finding 2 (end-to-end): a SkelBindingAPI on the SkelRoot must not
-    compose a dangling skel:animationSource into skel.usd via the geo.usd reference.
+    """Finding 2 (end-to-end): a SkelBindingAPI on the SkelRoot itself must
+    not leak into skel.usd -- only the actual bound Skeleton's
+    skel:animationSource is authored there.
     """
     path = str(tmp_path / "character.usda")
     _build_character_stage(path, apply_binding_on_skel_root=True)
@@ -535,11 +569,10 @@ def test_write_skel_layer_content_visible_via_default_traverse(tmp_path):
 
 
 def test_write_anim_layer_content_visible_via_default_traverse(tmp_path):
-    """Same class of bug as test_write_skel_layer_content_visible_via_default_traverse,
-    but more severe for anim.usd: it has no defaultPrim and references
-    nothing, so an all-`over` ancestor chain leaves no defining opinion
-    anywhere in the file at all -- the Animation prim would be invisible to
-    Traverse() even though GetPrimAtPath() still resolves its attributes.
+    """Same class of bug as test_write_skel_layer_content_visible_via_default_traverse:
+    an all-`over` ancestor chain would leave no defining opinion anywhere
+    in the file, making the Animation prim invisible to Traverse() even
+    though GetPrimAtPath() still resolves its attributes.
     """
     stage = _build_character_stage(str(tmp_path / "character.usda"))
     bindings = _discover_bindings(stage)
