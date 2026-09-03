@@ -54,11 +54,20 @@ Windows 多條 path 用 `;` 分隔，Linux/macOS 用 `:`。
 
 ```python
 import main
-# 或重新載入後直接執行模組
-exec(open(r"<path-to-repo>/MAYA/scripts/python/main.py").read())
+main.show()
 ```
 
-`main.py` 會偵測同名舊視窗並先關閉，再開新視窗，避免疊圖。
+若把這段存成 shelf button，每次點擊都是同一個 Python session，`import main`
+之後 module 已被快取，改了 `main.py` 原始碼不會反映——這種情況要重新載入：
+
+```python
+import importlib
+import main
+importlib.reload(main)
+main.show()
+```
+
+`main.show()` 會偵測同名舊視窗並先關閉，再開新視窗，避免疊圖。
 
 ### 之後要擴充（plug-ins / shelves / icons）
 
