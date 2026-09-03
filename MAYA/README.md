@@ -230,6 +230,9 @@ Maya USD plugin（`mayaUsdPlugin`）必須可載入；`ensure_usd_plugin()` 會�
 from utils.character_usd_split import split_character_usd
 
 geo_path, skel_path, anim_path = split_character_usd("character.usd")
+
+# 指定輸出目錄（預設 None：輸出到輸入檔案同一個資料夾）
+split_character_usd("character.usd", output_dir="D:/out")
 ```
 
 把 `mayaUSDExport` 匯出的合併角色 USD（geo + UsdSkel skinning + skeleton +
