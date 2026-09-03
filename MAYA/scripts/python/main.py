@@ -45,7 +45,7 @@ class MainWidget(QtWidgets.QWidget):
         self.setLayout(self.main_layout)
 
 
-if __name__ == '__main__':
+def show():
     mayaMainWindowPtr = omui.MQtUtil.mainWindow()
     mayaMainWindow = wrapInstance(int(mayaMainWindowPtr), QtWidgets.QWidget)
 
@@ -57,3 +57,8 @@ if __name__ == '__main__':
     main_window = MainWin(parent=mayaMainWindow)
     main_window.setObjectName('chd_tools_main_window')
     main_window.show()
+    return main_window
+
+
+if __name__ == '__main__':
+    show()
