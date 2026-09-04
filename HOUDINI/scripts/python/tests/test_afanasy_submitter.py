@@ -14,6 +14,7 @@ from chd_toolkits.afanasy_submitter import (  # noqa: E402
     build_render_command,
     decode_text,
     encode_text,
+    submit_job,
     validate_settings,
 )
 
@@ -36,6 +37,15 @@ class FakeHipFile:
 
     def isNewFile(self):
         return self._is_new
+
+
+class FakeHipFileWithSave(FakeHipFile):
+    def __init__(self):
+        super().__init__()
+        self.saved = False
+
+    def save(self):
+        self.saved = True
 
 
 class FakeHou:
@@ -111,6 +121,91 @@ class SubmitterPureTests(unittest.TestCase):
         self.assertIn("node.render(frame_range=(@#@,@#@))", command)
         self.assertNotIn("chd_toolkits", command)
         self.assertNotIn("場景", command)
+
+
+class FakeJob:
+    def __init__(self, name, send_result):
+        self.name = name
+        self.priority = None
+        self.blocks = []
+        self._send_result = send_result
+
+    def setPriority(self, priority):
+        self.priority = priority
+
+    def send(self):
+        return self._send_result
+
+
+class FakeBlock:
+    def __init__(self, name, service):
+        self.name = name
+        self.service = service
+
+    def setCommand(self, command):
+        self.command = command
+
+    def setNumeric(self, start, end, per_task, step):
+        self.numeric = (start, end, per_task, step)
+
+    def setCapacity(self, capacity):
+        self.capacity = capacity
+
+
+class FakeAf:
+    last_job = None
+    send_result = (True, {"id": 42})
+    Block = FakeBlock
+
+    @classmethod
+    def Job(cls, name):
+        cls.last_job = FakeJob(name, cls.send_result)
+        return cls.last_job
+
+
+class SubmitterJobTests(SubmitterPureTests):
+    def test_submit_job_saves_and_sends_expected_objects(self):
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        FakeAf.send_result = (True, {"id": 42})
+        status, data = submit_job(
+            self.make_settings(frames_per_task=4),
+            hou_module,
+            FakeAf,
+            is_file=lambda _: True,
+        )
+        self.assertTrue(hou_module.hipFile.saved)
+        self.assertTrue(status)
+        self.assertEqual(data, {"id": 42})
+        job = FakeAf.last_job
+        self.assertEqual(job.priority, 80)
+        self.assertEqual(len(job.blocks), 1)
+        block = job.blocks[0]
+        self.assertEqual(block.name, "輸出")
+        self.assertEqual(block.service, "hbatch")
+        self.assertEqual(block.numeric, (1, 12, 4, 1))
+        self.assertEqual(block.capacity, 800)
+
+    def test_submit_job_does_not_save_when_validation_fails(self):
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        with self.assertRaises(ValueError):
+            submit_job(
+                self.make_settings(frame_step=0),
+                hou_module,
+                FakeAf,
+                is_file=lambda _: True,
+            )
+        self.assertFalse(hou_module.hipFile.saved)
+
+    def test_submit_job_returns_send_failure_unchanged(self):
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        FakeAf.send_result = (False, {"error": "server unavailable"})
+        result = submit_job(
+            self.make_settings(), hou_module, FakeAf, is_file=lambda _: True
+        )
+        self.assertEqual(result, FakeAf.send_result)
 
 
 if __name__ == "__main__":
