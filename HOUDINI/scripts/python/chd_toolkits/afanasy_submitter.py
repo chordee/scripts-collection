@@ -66,3 +66,24 @@ def build_render_command(settings, hip_path):
     )
     executable = subprocess.list2cmdline([settings.hython_path])
     return f'{executable} -c "{code}"'
+
+
+def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
+    rop = validate_settings(settings, hou_module, is_file=is_file)
+    hou_module.hipFile.save()
+    hip_path = hou_module.hipFile.path()
+
+    job = af_module.Job(settings.job_name.strip())
+    job.setPriority(settings.priority)
+
+    block = af_module.Block(rop.name(), "hbatch")
+    block.setCommand(build_render_command(settings, hip_path))
+    block.setNumeric(
+        settings.frame_start,
+        settings.frame_end,
+        settings.frames_per_task,
+        settings.frame_step,
+    )
+    block.setCapacity(settings.capacity)
+    job.blocks.append(block)
+    return job.send()
