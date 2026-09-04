@@ -62,7 +62,7 @@ def build_render_command(settings, hip_path):
         "node=hou.node(rop);"
         "assert node is not None,'ROP node not found: '+rop;"
         "assert callable(getattr(node,'render',None)),'Node has no render(): '+rop;"
-        "node.render(frame_range=(@#@,@#@))"
+        f"node.render(frame_range=(@#@,@#@,{settings.frame_step}))"
     )
     executable = subprocess.list2cmdline([settings.hython_path])
     return f'{executable} -c "{code}"'
@@ -87,3 +87,157 @@ def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
     block.setCapacity(settings.capacity)
     job.blocks.append(block)
     return job.send()
+
+
+def session_defaults(hou_module, platform_name=os.name):
+    hip_path = hou_module.hipFile.path()
+    frame_start, frame_end = hou_module.playbar.playbackRange()
+    executable = "hython.exe" if platform_name == "nt" else "hython"
+    return {
+        "job_name": os.path.splitext(os.path.basename(hip_path))[0],
+        "hython_path": os.path.join(
+            hou_module.getenv("HFS") or "", "bin", executable
+        ),
+        "frame_start": int(frame_start),
+        "frame_end": int(frame_end),
+        "frame_step": 1,
+        "frames_per_task": 1,
+        "capacity": 800,
+        "priority": 80,
+    }
+
+
+def _create_dialog_class(QtWidgets, hou_module):
+    class AfanasySubmitterDialog(QtWidgets.QDialog):
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            defaults = session_defaults(hou_module)
+            self.setWindowTitle("Afanasy Submitter")
+
+            self.job_name_edit = QtWidgets.QLineEdit(defaults["job_name"])
+            self.hython_edit = QtWidgets.QLineEdit(defaults["hython_path"])
+            self.rop_edit = QtWidgets.QLineEdit()
+            self.rop_edit.setReadOnly(True)
+
+            self.frame_start_spin = self._spin(
+                -1_000_000, 1_000_000, defaults["frame_start"]
+            )
+            self.frame_end_spin = self._spin(
+                -1_000_000, 1_000_000, defaults["frame_end"]
+            )
+            self.frame_step_spin = self._spin(
+                1, 1_000_000, defaults["frame_step"]
+            )
+            self.frames_per_task_spin = self._spin(
+                1, 1_000_000, defaults["frames_per_task"]
+            )
+            self.capacity_spin = self._spin(
+                1, 1_000_000, defaults["capacity"]
+            )
+            self.priority_spin = self._spin(
+                0, 1_000_000, defaults["priority"]
+            )
+
+            hython_button = QtWidgets.QPushButton("Browse")
+            rop_button = QtWidgets.QPushButton("Browse")
+            self.submit_button = QtWidgets.QPushButton("Submit")
+            hython_button.clicked.connect(self._browse_hython)
+            rop_button.clicked.connect(self._browse_rop)
+            self.submit_button.clicked.connect(self._on_submit)
+
+            form = QtWidgets.QFormLayout(self)
+            form.addRow("Job Name", self.job_name_edit)
+            form.addRow("Hython", self._path_row(self.hython_edit, hython_button))
+            form.addRow("ROP Node", self._path_row(self.rop_edit, rop_button))
+            form.addRow("Frame Start", self.frame_start_spin)
+            form.addRow("Frame End", self.frame_end_spin)
+            form.addRow("Frame Step", self.frame_step_spin)
+            form.addRow("Frames per task", self.frames_per_task_spin)
+            form.addRow("Capacity", self.capacity_spin)
+            form.addRow("Job Priority", self.priority_spin)
+            form.addRow(self.submit_button)
+
+        @staticmethod
+        def _spin(minimum, maximum, value):
+            spin = QtWidgets.QSpinBox()
+            spin.setRange(minimum, maximum)
+            spin.setValue(value)
+            return spin
+
+        @staticmethod
+        def _path_row(line_edit, button):
+            container = QtWidgets.QWidget()
+            layout = QtWidgets.QHBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(line_edit)
+            layout.addWidget(button)
+            return container
+
+        def _browse_hython(self):
+            path, _ = QtWidgets.QFileDialog.getOpenFileName(
+                self, "Select hython", self.hython_edit.text()
+            )
+            if path:
+                self.hython_edit.setText(path)
+
+        def _browse_rop(self):
+            path = hou_module.ui.selectNode(
+                title="Select ROP Node",
+                node_type_filter=hou_module.nodeTypeFilter.Rop,
+            )
+            if path:
+                self.rop_edit.setText(path)
+
+        def _settings_from_fields(self):
+            return SubmissionSettings(
+                job_name=self.job_name_edit.text(),
+                hython_path=self.hython_edit.text(),
+                rop_path=self.rop_edit.text(),
+                frame_start=self.frame_start_spin.value(),
+                frame_end=self.frame_end_spin.value(),
+                frame_step=self.frame_step_spin.value(),
+                frames_per_task=self.frames_per_task_spin.value(),
+                capacity=self.capacity_spin.value(),
+                priority=self.priority_spin.value(),
+            )
+
+        def _on_submit(self):
+            self.submit_button.setEnabled(False)
+            try:
+                import af
+
+                settings = self._settings_from_fields()
+                status, data = submit_job(settings, hou_module, af)
+                if not status:
+                    raise RuntimeError(f"Afanasy submission failed: {data}")
+                hou_module.ui.displayMessage(
+                    f"Afanasy job submitted: {settings.job_name}"
+                )
+            except Exception as exc:
+                hou_module.ui.displayMessage(
+                    str(exc), severity=hou_module.severityType.Error
+                )
+            finally:
+                self.submit_button.setEnabled(True)
+
+    return AfanasySubmitterDialog
+
+
+_dialog = None
+
+
+def show():
+    global _dialog
+
+    import hou
+    from PySide6 import QtWidgets
+
+    if _dialog is not None:
+        _dialog.close()
+        _dialog.deleteLater()
+    dialog_class = _create_dialog_class(QtWidgets, hou)
+    _dialog = dialog_class(parent=hou.qt.mainWindow())
+    _dialog.show()
+    _dialog.raise_()
+    _dialog.activateWindow()
+    return _dialog

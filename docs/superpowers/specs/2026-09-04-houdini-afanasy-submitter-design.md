@@ -67,7 +67,7 @@ security mechanism.
 Conceptually, the block command is:
 
 ```text
-"<hython>" -c "import base64,hou; ...; node.render(frame_range=(@#@,@#@))"
+"<hython>" -c "import base64,hou; ...; node.render(frame_range=(@#@,@#@,<step>))"
 ```
 
 The inline program:
@@ -76,11 +76,13 @@ The inline program:
 2. Loads the HIP with `hou.hipFile.load()`.
 3. Resolves the ROP with `hou.node()`.
 4. Raises an error if the node does not exist or has no callable `render`.
-5. Calls `render(frame_range=(task_start, task_end))`.
+5. Calls `render(frame_range=(task_start, task_end, frame_step))`.
 
 Exceptions are not swallowed, so `hython` exits unsuccessfully and Afanasy
 can mark the task as errored. The two `@#@` tokens are retained for Afanasy to
-replace with each numeric task's start and end frames.
+replace with each numeric task's start and end frames. The configured frame
+step is embedded as the third `frame_range` value so the ROP and numeric block
+use the same increment.
 
 ## Submission flow
 
