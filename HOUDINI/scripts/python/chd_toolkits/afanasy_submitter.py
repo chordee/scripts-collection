@@ -107,10 +107,32 @@ def session_defaults(hou_module, platform_name=os.name):
     }
 
 
-def _create_dialog_class(QtWidgets, hou_module):
-    class AfanasySubmitterDialog(QtWidgets.QDialog):
+_dialog_class_cache = {}
+
+
+def _create_dialog_class(QtWidgets, hou_module, QtCore=None):
+    if QtCore is None:
+        try:
+            from hutil.Qt import QtCore
+        except ImportError:
+            try:
+                from PySide2 import QtCore
+            except ImportError:
+                try:
+                    from PySide6 import QtCore
+                except ImportError:
+                    QtCore = None
+
+    cache_key = (id(QtWidgets), id(hou_module))
+    if cache_key in _dialog_class_cache:
+        return _dialog_class_cache[cache_key]
+
+    class AfanasySubmitterDialog(QtWidgets.QWidget):
         def __init__(self, parent=None):
             super().__init__(parent)
+            if hasattr(self, "setProperty"):
+                self.setProperty("houdiniStyle", True)
+            self.resize(360, 280)
             defaults = session_defaults(hou_module)
             self.setWindowTitle("Afanasy Submitter")
 
@@ -241,24 +263,59 @@ def _create_dialog_class(QtWidgets, hou_module):
             finally:
                 self.submit_button.setEnabled(True)
 
+        def closeEvent(self, event):
+            global _dialog
+            _dialog = None
+            try:
+                self.setParent(None)
+            except Exception:
+                pass
+            if hasattr(event, "accept"):
+                event.accept()
+
+    _dialog_class_cache[cache_key] = AfanasySubmitterDialog
     return AfanasySubmitterDialog
 
 
 _dialog = None
 
 
-def show():
+def _get_qt():
+    for mod_name in ("hutil.Qt", "PySide2", "PySide6"):
+        try:
+            mod = __import__(mod_name, fromlist=["QtWidgets", "QtCore"])
+            qt_widgets = getattr(mod, "QtWidgets", None)
+            qt_core = getattr(mod, "QtCore", None)
+            if qt_widgets is not None:
+                return qt_widgets, qt_core
+        except ImportError:
+            pass
+    raise ImportError("Neither hutil.Qt, PySide2, nor PySide6 could be imported.")
+
+
+def _get_qt_widgets():
+    QtWidgets, _ = _get_qt()
+    return QtWidgets
+
+
+def show(parent=None):
     global _dialog
 
     import hou
-    from PySide6 import QtWidgets
 
-    if _dialog is not None:
-        _dialog.close()
-        _dialog.deleteLater()
-    dialog_class = _create_dialog_class(QtWidgets, hou)
-    _dialog = dialog_class(parent=hou.qt.mainWindow())
+    QtWidgets, QtCore = _get_qt()
+
+    if _dialog is None:
+        dialog_class = _create_dialog_class(QtWidgets, hou, QtCore)
+        _dialog = dialog_class(parent=parent)
+        if parent is not None and QtCore is not None:
+            flag_ns = getattr(
+                getattr(QtCore, "Qt", None), "WindowType", getattr(QtCore, "Qt", None)
+            )
+            window_flag = getattr(flag_ns, "Window", None)
+            if window_flag is not None and hasattr(_dialog, "setWindowFlags"):
+                _dialog.setWindowFlags(window_flag)
+
     _dialog.show()
     _dialog.raise_()
-    _dialog.activateWindow()
     return _dialog

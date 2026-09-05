@@ -14,6 +14,7 @@ if PACKAGE_PARENT not in sys.path:
 from chd_toolkits.afanasy_submitter import (  # noqa: E402
     SubmissionSettings,
     _create_dialog_class,
+    _get_qt_widgets,
     build_render_command,
     decode_text,
     encode_text,
@@ -260,6 +261,9 @@ class FakeDialog:
     def setWindowTitle(self, title):
         self.window_title = title
 
+    def setProperty(self, name, value):
+        setattr(self, f"prop_{name}", value)
+
     def close(self):
         self.closed = True
 
@@ -274,6 +278,9 @@ class FakeDialog:
 
     def activateWindow(self):
         self.activated = True
+
+    def resize(self, width, height):
+        self.size = (width, height)
 
 
 class FakeLineEdit:
@@ -356,7 +363,7 @@ class FakeQtWidgets:
     QLineEdit = FakeLineEdit
     QSpinBox = FakeSpinBox
     QPushButton = FakePushButton
-    QWidget = FakeWidget
+    QWidget = FakeDialog
     QHBoxLayout = FakeLayout
     QFormLayout = FakeLayout
     QFileDialog = FakeFileDialog
@@ -426,12 +433,14 @@ class SubmitterDialogTests(unittest.TestCase):
         self.hou_module.nodeTypeFilter = type("NodeTypeFilter", (), {"Rop": "rop"})
         self.hou_module.severityType = type("SeverityType", (), {"Error": "error"})
         self.hou_module.qt = type(
-            "Qt", (), {"mainWindow": staticmethod(lambda: "main-window")}
+            "Qt", (), {"mainWindow": staticmethod(lambda: FakeQtWidgets.QWidget())}
         )()
 
     def test_dialog_defaults_and_rop_selector(self):
+        parent_widget = FakeQtWidgets.QWidget()
         dialog_class = _create_dialog_class(FakeQtWidgets, self.hou_module)
-        dialog = dialog_class(parent="main-window")
+        dialog = dialog_class(parent=parent_widget)
+        self.assertTrue(getattr(dialog, "prop_houdiniStyle", False))
         self.assertEqual(dialog.window_title, "Afanasy Submitter")
         self.assertEqual(dialog.job_name_edit.text(), "場景 test")
         self.assertTrue(dialog.rop_edit.read_only)
@@ -484,7 +493,7 @@ class SubmitterDialogTests(unittest.TestCase):
         self.assertEqual(options["buttons"], ("OK", "Cancel"))
         self.assertEqual(options["close_choice"], 1)
 
-    def test_show_replaces_previous_dialog(self):
+    def test_show_raises_existing_dialog(self):
         self.hou_module.hipFile = FakeHipFile(path="D:/show/shot010.hip")
         pyside = types.ModuleType("PySide6")
         pyside.QtWidgets = FakeQtWidgets
@@ -493,18 +502,23 @@ class SubmitterDialogTests(unittest.TestCase):
 
         submitter._dialog = None
         with mock.patch.dict(
-            sys.modules, {"hou": self.hou_module, "PySide6": pyside}
+            sys.modules,
+            {
+                "hou": self.hou_module,
+                "hutil": None,
+                "hutil.Qt": None,
+                "PySide2": None,
+                "PySide6": pyside,
+            },
         ):
             first = show()
             second = show()
 
-        self.assertTrue(first.closed)
-        self.assertTrue(first.deleted)
+        self.assertIs(first, second)
         self.assertIs(second, submitter._dialog)
-        self.assertEqual(second.parent, "main-window")
+        self.assertIsNone(second.parent)
         self.assertTrue(second.visible)
         self.assertTrue(second.raised)
-        self.assertTrue(second.activated)
 
     def test_submit_error_is_displayed_and_button_is_reenabled(self):
         dialog_class = _create_dialog_class(FakeQtWidgets, self.hou_module)
@@ -518,6 +532,75 @@ class SubmitterDialogTests(unittest.TestCase):
             self.hou_module.ui.messages[-1], ("Job Name is required.", "error")
         )
         self.assertTrue(dialog.submit_button.enabled)
+
+
+class QtResolutionTests(unittest.TestCase):
+    def test_prefers_hutil_qt(self):
+        hutil_mod = types.ModuleType("hutil")
+        qt_mod = types.ModuleType("hutil.Qt")
+        qt_mod.QtWidgets = "hutil-widgets"
+        hutil_mod.Qt = qt_mod
+
+        pyside2 = types.ModuleType("PySide2")
+        pyside2.QtWidgets = "pyside2-widgets"
+        pyside6 = types.ModuleType("PySide6")
+        pyside6.QtWidgets = "pyside6-widgets"
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "hutil": hutil_mod,
+                "hutil.Qt": qt_mod,
+                "PySide2": pyside2,
+                "PySide6": pyside6,
+            },
+        ):
+            self.assertEqual(_get_qt_widgets(), "hutil-widgets")
+
+    def test_falls_back_to_pyside2(self):
+        pyside2 = types.ModuleType("PySide2")
+        pyside2.QtWidgets = "pyside2-widgets"
+        pyside6 = types.ModuleType("PySide6")
+        pyside6.QtWidgets = "pyside6-widgets"
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "hutil": None,
+                "hutil.Qt": None,
+                "PySide2": pyside2,
+                "PySide6": pyside6,
+            },
+        ):
+            self.assertEqual(_get_qt_widgets(), "pyside2-widgets")
+
+    def test_falls_back_to_pyside6(self):
+        pyside6 = types.ModuleType("PySide6")
+        pyside6.QtWidgets = "pyside6-widgets"
+
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "hutil": None,
+                "hutil.Qt": None,
+                "PySide2": None,
+                "PySide6": pyside6,
+            },
+        ):
+            self.assertEqual(_get_qt_widgets(), "pyside6-widgets")
+
+    def test_raises_import_error_when_all_missing(self):
+        with mock.patch.dict(
+            sys.modules,
+            {
+                "hutil": None,
+                "hutil.Qt": None,
+                "PySide2": None,
+                "PySide6": None,
+            },
+        ):
+            with self.assertRaises(ImportError):
+                _get_qt_widgets()
 
 
 if __name__ == "__main__":
