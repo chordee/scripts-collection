@@ -155,6 +155,8 @@ Worker 實際執行的是 `hython -c "..."`：解碼 HIP／ROP 路徑、載入 H
 
 Worker 不需要安裝 `chd_toolkits`，也不需要共用臨時 Python 腳本；但必須能存取指定的 hython、HIP、場景資產及輸出路徑，並具備所需授權。工具沒有自動路徑映射，也不建立 HIP 快照，後續再儲存同一份 HIP 會影響尚未載入它的 tasks。
 
+`submit_job()` 目前不會呼叫 `job.setNativeOS()` 限制 job 只跑在提交端的原生作業系統——這是刻意的假設：目前 render farm 全部是 Windows worker，尚無混合 OS 的情境。若未來 farm 加入非 Windows worker，需要補上 `setNativeOS()`（或依實際情境改用 `setAnyOS()`），否則命令列（`hython.exe`、路徑分隔符號等）在跨平台派送時會失敗。
+
 上述確認對話框屬於面板流程；直接呼叫底層 `submit_job()` 會驗證、存檔並提交，不顯示確認視窗。自動化測試涵蓋 mock 流程，不代表已驗證真實面板顯示或 farm 渲染。
 
 ---
