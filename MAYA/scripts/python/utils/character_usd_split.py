@@ -247,8 +247,21 @@ def _write_skel_layer(
             stage.GetRootLayer(), binding.skeleton_path,
             skel_stage.GetRootLayer(), binding.skeleton_path,
         )
-        if binding.anim_path is not None and skel_stage.GetPrimAtPath(binding.anim_path).IsValid():
-            skel_stage.RemovePrim(binding.anim_path)
+        copied_skel_prim = skel_stage.GetPrimAtPath(binding.skeleton_path)
+
+        # Sdf.CopySpec above copied the Skeleton's entire subtree, which can
+        # contain more than just binding.anim_path -- an unrelated, unbound
+        # Animation prim nested anywhere under the Skeleton would otherwise
+        # survive in skel.usd. Every Animation prim belongs only in anim.usd.
+        nested_anim_paths = [
+            prim.GetPath()
+            for prim in Usd.PrimRange(copied_skel_prim)
+            if prim.IsA(UsdSkel.Animation)
+        ]
+        for nested_anim_path in nested_anim_paths:
+            if skel_stage.GetPrimAtPath(nested_anim_path).IsValid():
+                skel_stage.RemovePrim(nested_anim_path)
+
         # skel:animationSource is namespace-inherited, so the source
         # Skeleton prim itself may never have had SkelBindingAPI applied --
         # only an ancestor (e.g. the SkelRoot) did. Sdf.CopySpec only copies
