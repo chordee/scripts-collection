@@ -249,12 +249,22 @@ def _write_skel_layer(
         )
         if binding.anim_path is not None and skel_stage.GetPrimAtPath(binding.anim_path).IsValid():
             skel_stage.RemovePrim(binding.anim_path)
+        # skel:animationSource is namespace-inherited, so the source
+        # Skeleton prim itself may never have had SkelBindingAPI applied --
+        # only an ancestor (e.g. the SkelRoot) did. Sdf.CopySpec only copies
+        # the Skeleton's own authored opinions, so Apply() here explicitly
+        # rather than relying on GetAnimationSourceRel() alone: without it,
+        # SetTargets() would author the relationship value onto a prim that
+        # never declares SkelBindingAPI, which UsdSkel consumers checking
+        # HasAPI() would then ignore entirely.
         copied_skel_prim = skel_stage.GetPrimAtPath(binding.skeleton_path)
-        anim_source_rel = UsdSkel.BindingAPI(copied_skel_prim).GetAnimationSourceRel()
+        copied_skel_binding = UsdSkel.BindingAPI.Apply(copied_skel_prim)
         if binding.anim_path is not None:
-            anim_source_rel.SetTargets([binding.anim_path])
+            copied_skel_binding.CreateAnimationSourceRel().SetTargets([binding.anim_path])
         else:
-            anim_source_rel.ClearTargets(True)
+            existing_rel = copied_skel_binding.GetAnimationSourceRel()
+            if existing_rel:
+                existing_rel.ClearTargets(True)
         if hide_skeleton:
             UsdGeom.Imageable(copied_skel_prim).CreateVisibilityAttr().Set(UsdGeom.Tokens.invisible)
 
