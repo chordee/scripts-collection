@@ -25,6 +25,9 @@ from chd_toolkits.afanasy_submitter import (  # noqa: E402
 
 
 class FakeRop:
+    def path(self):
+        return "/out/selected_rop"
+
     def name(self):
         return "輸出"
 
@@ -54,6 +57,8 @@ class FakeHipFileWithSave(FakeHipFile):
 
 
 class FakeHou:
+    RopNode = FakeRop
+
     def __init__(self, node=None, path="D:/show/場景 test.hip", is_new=False):
         self.hipFile = FakeHipFile(path, is_new)
         self._node = node if node is not None else FakeRop()
@@ -311,6 +316,17 @@ class FakeWidget:
     pass
 
 
+class FakeCheckBox:
+    def __init__(self, text):
+        self.checked = False
+
+    def isChecked(self):
+        return self.checked
+
+    def setChecked(self, checked):
+        self.checked = checked
+
+
 class FakeLayout:
     def __init__(self, parent=None):
         self.parent = parent
@@ -335,6 +351,7 @@ class FakeFileDialog:
 
 
 class FakeQtWidgets:
+    QCheckBox = FakeCheckBox
     QDialog = FakeDialog
     QLineEdit = FakeLineEdit
     QSpinBox = FakeSpinBox
@@ -349,16 +366,53 @@ class FakeUi:
     def __init__(self):
         self.selected_node = "/out/farm_rop"
         self.messages = []
+        self.confirmation_result = 0
+        self.confirmations = []
 
     def selectNode(self, **kwargs):
         self.select_node_kwargs = kwargs
         return self.selected_node
 
-    def displayMessage(self, message, severity=None):
+    def displayMessage(self, message, severity=None, **kwargs):
         self.messages.append((message, severity))
+        if "buttons" in kwargs:
+            self.confirmations.append((message, kwargs))
+            return self.confirmation_result
 
 
 class SubmitterDialogTests(unittest.TestCase):
+    def test_selected_rop_is_resolved_at_submission(self):
+        dialog = _create_dialog_class(FakeQtWidgets, self.hou_module)()
+        self.assertFalse(dialog.use_selected_rop.isChecked())
+        dialog.use_selected_rop.setChecked(True)
+        dialog.hython_edit.setText(sys.executable)
+        dialog.rop_edit.setText("/out/old_rop")
+        selected = FakeRop()
+        self.hou_module.selectedNodes = lambda: (selected,)
+        FakeAf.send_result = (True, {"id": 42})
+        with mock.patch.dict(sys.modules, {"af": FakeAf}):
+            dialog._on_submit()
+        self.assertTrue(self.hou_module.hipFile.saved)
+        self.assertIn(encode_text(selected.path()), FakeAf.last_job.blocks[0].command)
+
+    def test_invalid_selection_aborts_before_confirmation(self):
+        impostor = types.SimpleNamespace(render=lambda **kwargs: None)
+        for selection in ((), (FakeRop(), FakeRop()), (impostor,)):
+            with self.subTest(selection=selection):
+                dialog = _create_dialog_class(FakeQtWidgets, self.hou_module)()
+                dialog.use_selected_rop.setChecked(True)
+                dialog.hython_edit.setText(sys.executable)
+                self.hou_module.selectedNodes = lambda: selection
+                with mock.patch.dict(sys.modules, {"af": FakeAf}), mock.patch.object(
+                    FakeAf, "Job"
+                ) as create_job:
+                    dialog._on_submit()
+                create_job.assert_not_called()
+                self.assertFalse(self.hou_module.hipFile.saved)
+                self.assertFalse(self.hou_module.ui.confirmations)
+                self.assertEqual(self.hou_module.ui.messages[-1][1], "error")
+                self.assertTrue(dialog.submit_button.enabled)
+
     def setUp(self):
         self.hou_module = FakeHou(path="D:/show/shot010.hip")
         self.hou_module.hipFile = FakeHipFileWithSave()
@@ -407,10 +461,28 @@ class SubmitterDialogTests(unittest.TestCase):
 
         self.assertTrue(self.hou_module.hipFile.saved)
         self.assertTrue(dialog.submit_button.enabled)
+        self.assertEqual(len(self.hou_module.ui.confirmations), 1)
         self.assertEqual(
             self.hou_module.ui.messages[-1],
             ("Afanasy job submitted: 場景 test", None),
         )
+
+    def test_cancel_aborts_before_save_and_job_creation(self):
+        dialog = _create_dialog_class(FakeQtWidgets, self.hou_module)()
+        dialog.hython_edit.setText(sys.executable)
+        dialog.rop_edit.setText("/out/farm_rop")
+        self.hou_module.ui.confirmation_result = 1
+        with mock.patch.dict(sys.modules, {"af": FakeAf}), mock.patch.object(
+            FakeAf, "Job"
+        ) as create_job:
+            dialog._on_submit()
+        self.assertFalse(self.hou_module.hipFile.saved)
+        create_job.assert_not_called()
+        self.assertTrue(dialog.submit_button.enabled)
+        message, options = self.hou_module.ui.confirmations[0]
+        self.assertIn(self.hou_module.hipFile.path(), message)
+        self.assertEqual(options["buttons"], ("OK", "Cancel"))
+        self.assertEqual(options["close_choice"], 1)
 
     def test_show_replaces_previous_dialog(self):
         self.hou_module.hipFile = FakeHipFile(path="D:/show/shot010.hip")

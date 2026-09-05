@@ -28,7 +28,8 @@ or depend on a shared temporary Python script.
   user-configurable `hython` path.
 - The task command uses `hython -c`; it does not import `chd_toolkits` on the
   render host.
-- Submission automatically saves the current HIP before sending the job.
+- The panel asks for confirmation before saving the current HIP and sending
+  the job. OK proceeds; Cancel or closing the confirmation aborts submission.
 - An unnamed `untitled.hip` is rejected so the tool does not choose a save
   location on the user's behalf.
 - No Shelf Tool definition is added in this change.
@@ -46,6 +47,11 @@ Fields:
   platforms), remains editable, and has a file browser button.
 - **ROP Node**: a read-only path field populated through Houdini's node
   selector, restricted to ROP nodes.
+- **Use Selected ROP**: unchecked by default. When checked, Submit resolves
+  the current Houdini selection instead of the path field. Exactly one node
+  must be selected, and it must satisfy `isinstance(node, hou.RopNode)`;
+  otherwise submission stops before the save confirmation. The same type
+  check also validates nodes supplied by the browser.
 - **Frame Start / End / Step**: start and end default to the current playback
   range; step defaults to `1`.
 - **Frames per task**: defaults to `1`.
@@ -91,7 +97,9 @@ On Submit:
 1. Validate the job name, hython executable, selected ROP, frame values,
    capacity, and priority.
 2. Reject an unnamed HIP file.
-3. Save the current scene with `hou.hipFile.save()`.
+3. Show a Save and Submit dialog with the current HIP path and OK/Cancel
+   buttons. Cancel (also the default and close action) stops without saving
+   or sending. On OK, save the current scene with `hou.hipFile.save()`.
 4. Build the self-contained command.
 5. Construct the Afanasy objects:
 
