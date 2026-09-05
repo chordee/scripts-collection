@@ -260,6 +260,43 @@ def test_copy_primvar_preserves_indexed_primvar_indices(tmp_path):
     assert list(out_joint_indices.GetIndices()) == [0, 1, 1, 0]
 
 
+def test_write_skel_layer_applies_binding_api_when_animation_source_only_inherited(tmp_path):
+    """skel:animationSource is namespace-inherited: a real export can author
+    it only on the SkelRoot, never directly on the Skeleton. _discover_bindings
+    resolves anim_path correctly either way (via UsdSkel.Cache), but
+    Sdf.CopySpec of the Skeleton only copies its own authored opinions, so
+    the copied Skeleton would never have had SkelBindingAPI applied. Without
+    an explicit Apply(), authoring skel:animationSource on it would write a
+    relationship value onto a prim that never declares the API, which
+    UsdSkel consumers checking HasAPI() would ignore.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    # The base fixture already applies SkelBindingAPI directly on the
+    # Skeleton; strip it back off and re-author animationSource only on the
+    # SkelRoot to force the inherited-only path.
+    skel_prim = stage.GetPrimAtPath("/Character/Skel")
+    skel_prim.RemoveAPI(UsdSkel.BindingAPI)
+    for prop_name in list(skel_prim.GetPropertyNames()):
+        if prop_name.startswith("skel:"):
+            skel_prim.RemoveProperty(prop_name)
+    root_binding = UsdSkel.BindingAPI.Apply(stage.GetPrimAtPath("/Character"))
+    root_binding.CreateAnimationSourceRel().SetTargets([Sdf.Path("/Character/Skel/Anim")])
+    stage.GetRootLayer().Save()
+
+    bindings = _discover_bindings(stage)
+    assert bindings[0].anim_path == Sdf.Path("/Character/Skel/Anim")
+    skel_path = str(tmp_path / "character_skel.usd")
+
+    _write_skel_layer(stage, bindings, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    out_skel_prim = skel_stage.GetPrimAtPath("/Character/Skel")
+    assert "SkelBindingAPI" in out_skel_prim.GetAppliedSchemas()
+    assert UsdSkel.BindingAPI(out_skel_prim).GetAnimationSourceRel().GetTargets() == [
+        Sdf.Path("/Character/Skel/Anim")
+    ]
+
+
 def test_write_skel_layer_is_standalone_and_composes_with_geo(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"))
     bindings = _discover_bindings(stage)
