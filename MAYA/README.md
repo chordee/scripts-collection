@@ -16,6 +16,7 @@ MAYA/
         │   └── usd_tab.py       USD tab：SkelRoot、USD Preview Shader、Materials Assignment、Arnold Materials 匯出
         └── utils/               純邏輯函式 / 類別，不依賴 PySide2
             ├── arnold_to_usd.py
+            ├── character_usd_split.py
             ├── compare_bindposes.py
             ├── materials_assignment.py
             ├── usd_attrs.py
@@ -53,11 +54,20 @@ Windows 多條 path 用 `;` 分隔，Linux/macOS 用 `:`。
 
 ```python
 import main
-# 或重新載入後直接執行模組
-exec(open(r"<path-to-repo>/MAYA/scripts/python/main.py").read())
+main.show()
 ```
 
-`main.py` 會偵測同名舊視窗並先關閉，再開新視窗，避免疊圖。
+若把這段存成 shelf button，每次點擊都是同一個 Python session，`import main`
+之後 module 已被快取，改了 `main.py` 原始碼不會反映——這種情況要重新載入：
+
+```python
+import importlib
+import main
+importlib.reload(main)
+main.show()
+```
+
+`main.show()` 會偵測同名舊視窗並先關閉，再開新視窗，避免疊圖。
 
 ### 之後要擴充（plug-ins / shelves / icons）
 
@@ -222,6 +232,82 @@ Maya USD plugin（`mayaUsdPlugin`）必須可載入；`ensure_usd_plugin()` 會�
 - `add_sublayer` 比對 sublayer 時做路徑正規化（forward slash + 折疊冗餘 `.`），避免 `a/b.usd` 與 `./a/b.usd` 重複加入。
 - `add_reference` 預設用 `Usd.EditContext` 強制 author 在 root layer；若要沿用當前 edit target，把 `on_root_layer=False`。
 - 訊息透過 `logging.getLogger(__name__)`，呼叫端可自行設 level、轉接 handler。
+
+### `character_usd_split`
+
+```python
+from utils.character_usd_split import split_character_usd
+
+geo_path, skel_path, anim_path = split_character_usd("character.usd")
+
+# 指定輸出目錄（預設 None：輸出到輸入檔案同一個資料夾）
+split_character_usd("character.usd", output_dir="D:/out")
+```
+
+把 `mayaUSDExport` 匯出的合併角色 USD（geo + UsdSkel skinning + skeleton +
+animation + blendshape）拆成三個獨立檔案：
+
+- `<name>_geo.usd`：純幾何，不含任何 skinning / skeleton 資料（不論該
+  mesh 原本有沒有被蒙皮綁定）。
+- `<name>_skel.usd`：只含**有實際蒙皮綁定**的 `Skeleton`／`BlendShape`
+  prim，以及疊加在 mesh 路徑上的完整 skinning 資料（`jointIndices` /
+  `jointWeights` / `geomBindTransform` / `skel:joints`（局部 joint
+  子集合對照表，若有 author）/ `skel:skinningMethod`（`classicLinear`
+  或 `dualQuaternion`，若有 author）與 `skel:skeleton` 關係）——這些
+  mesh 路徑本身是沒有型別的 `over`/`def`，不含幾何資料。
+- `<name>_anim.usd`：只含**有實際蒙皮綁定**之骨架的 `UsdSkelAnimation`
+  （joint 動畫時間量資料，以及 blendshape 的 `blendShapeWeights`）。
+
+三個檔案完全獨立，互不 `reference`／`payload`。要組合使用（例如把
+`_skel.usd` 的蒙皮資料疊回 `_geo.usd` 的幾何上）由下游自行決定要用
+reference、payload 還是 sublayer——`split_character_usd` 不預設任何一種；
+三個檔案共用同一個 `defaultPrim` 路徑，`reference`／`sublayer` 都能直接
+組合起來。
+
+`_skel.usd` 的 `Skeleton` 會把 `skel:animationSource` 指向 `_anim.usd`
+裡對應 `UsdSkelAnimation` 的 prim 路徑——這個路徑只是 composed namespace
+裡的一個位置，不是指向 `_anim.usd` 這個檔案本身，所以只要 `_anim.usd`
+（或任何路徑相同的替代動畫檔）也被組合進來就會自動解析，沒組合進來時
+單純懸空、不影響其他部分。這代表把三個檔案 sublayer 或 reference 在一起
+就會是完整可動畫的角色；要換掉某個 shot 的動畫，只要換一個 `_anim.usd`
+（維持同樣的 Animation prim 路徑）即可，不需要改 `_skel.usd`。
+
+真實 `mayaUSDExport` 輸出常包含大量**未被蒙皮綁定**的 `Skeleton` +
+`Animation` prim pair（例如 Maya FK/IK 控制骨架的每根控制關節都會各自
+匯出一組），這些不屬於任何 mesh 的 skinning，因此三個輸出檔案都不會有
+它們——只有透過 `UsdSkel.Cache.ComputeSkelBindings` 真正解析出蒙皮綁定
+關係的骨架才會進到 `_skel.usd`／`_anim.usd`。
+
+三個選用旗標（預設都是 `False`，不影響既有行為）：
+
+```python
+split_character_usd(
+    "character.usd",
+    hide_curves=True,           # _geo.usd 裡的 BasisCurves/NurbsCurves 設 visibility=invisible
+    hide_skeleton=True,         # _skel.usd 裡的 Skeleton 設 visibility=invisible
+    curves_purpose_guide=True,  # _geo.usd 裡的 BasisCurves/NurbsCurves 設 purpose=guide
+)
+```
+
+`hide_curves`／`curves_purpose_guide` 針對的是同一批 curve prim，兩者互相
+獨立、可以同時開啟；`visibility`/`purpose` 都是寫死的靜態值，不是
+time-sampled。
+
+不是 Maya-USD Export Chaser plugin，單純函式，匯出後手動呼叫：
+
+```python
+cmds.mayaUSDExport(file="character.usd", ...)
+geo_path, skel_path, anim_path = split_character_usd("character.usd")
+```
+
+- 用 `UsdSkel.Cache` + `UsdSkel.BindingAPI` 做 schema-based 探索，不假設
+  prim 路徑深度；但 `SkelRoot` 到被綁定 mesh 之間，中繼 prim 必須有明確型別
+  （`Xform`/`Scope`），沒有型別的中繼 prim 會讓探索找不到 skinning target。
+- blendshape 的靜態 target 資料歸 `_skel.usd`（跟 Skeleton 同類，屬於「可以
+  怎麼變形」的結構資料）；`blendShapeWeights` 時間量資料歸 `_anim.usd`
+  （跟 joint 動畫共用同一個 `UsdSkelAnimation` prim，不需要額外拆檔）。
+- 找不到輸入檔案 `raise FileNotFoundError`；輸入完全沒有 UsdSkel binding
+  （純靜態 geo，沒有骨架）`raise ValueError`。
 
 ## 相依
 
