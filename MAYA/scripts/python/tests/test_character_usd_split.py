@@ -361,6 +361,26 @@ def test_write_skel_layer_no_blendshape(tmp_path):
     assert not skel_stage.GetPrimAtPath("/Character/Geom/box/blink").IsValid()
 
 
+def test_write_skel_layer_removes_unrelated_animation_nested_under_skeleton(tmp_path):
+    """Sdf.CopySpec of binding.skeleton_path copies its entire subtree, which
+    can contain more than just binding.anim_path -- an extra, unrelated
+    Animation prim nested anywhere under the Skeleton must still be removed;
+    every Animation prim belongs only in anim.usd.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    stray_anim = UsdSkel.Animation.Define(stage, "/Character/Skel/ExtraAnim")
+    stray_anim.CreateJointsAttr(Vt.TokenArray(["root"]))
+    stage.GetRootLayer().Save()
+    bindings = _discover_bindings(stage)
+    skel_path = str(tmp_path / "character_skel.usd")
+
+    _write_skel_layer(stage, bindings, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    assert not skel_stage.GetPrimAtPath("/Character/Skel/ExtraAnim").IsValid()
+    assert not skel_stage.GetPrimAtPath("/Character/Skel/Anim").IsValid()
+
+
 def test_write_skel_layer_copies_joints_mapper_and_skinning_method(tmp_path):
     """A real mayaUSDExport character had two meshes each authoring their own
     skel:joints (a local joint order/subset remapping jointIndices against
