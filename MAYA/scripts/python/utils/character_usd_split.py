@@ -142,7 +142,10 @@ def _write_geo_layer(
     # namespace-inherited. Strip the schema and skel:-namespaced properties
     # wherever it's actually applied so geo.usd never carries a dangling
     # skel:skeleton/skel:animationSource pointing at content removed above.
-    for prim in geo_stage.Traverse():
+    # TraverseAll(), not Traverse(): the default predicate skips inactive
+    # prims, which would otherwise leave a stale binding on a deactivated
+    # skinned mesh untouched.
+    for prim in geo_stage.TraverseAll():
         if "SkelBindingAPI" not in prim.GetAppliedSchemas():
             continue
         prim.RemoveAPI(UsdSkel.BindingAPI)
@@ -301,9 +304,13 @@ def _write_skel_layer(
                     src_mesh_binding.GetBlendShapeTargetsRel().GetTargets()
                 )
 
-        # BlendShape prims nest under the mesh path, so copy them only after
-        # the `over` specs above have established that path in this layer.
+        # BlendShape targets come from a relationship (skel:blendShapeTargets)
+        # and aren't required to live under the mesh's own subtree, so their
+        # ancestor chain may not exist in this layer yet even after the mesh
+        # overrides above -- same "CopySpec needs the destination ancestor to
+        # already exist" requirement as the Skeleton copy.
         for bs_path in binding.blend_shape_paths:
+            _define_ancestor_chain(skel_stage.GetRootLayer(), bs_path)
             Sdf.CopySpec(stage.GetRootLayer(), bs_path, skel_stage.GetRootLayer(), bs_path)
 
     skel_stage.GetRootLayer().Save()

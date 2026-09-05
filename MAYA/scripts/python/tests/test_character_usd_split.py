@@ -28,6 +28,7 @@ def _build_character_stage(
     default_prim_path=None,
     apply_binding_on_skel_root=False,
     anim_sibling_of_skeleton=False,
+    blend_shape_path=None,
 ):
     """A SkelRoot > Xform "Geom" > Mesh "box" (skinned) + Skeleton + Animation,
     with explicitly-typed intermediate prims (untyped ancestors break
@@ -39,7 +40,9 @@ def _build_character_stage(
     ``apply_binding_on_skel_root`` additionally applies SkelBindingAPI to
     the SkelRoot prim itself (Finding 2). ``anim_sibling_of_skeleton`` places
     the Animation prim as a sibling of the Skeleton instead of nested under
-    it (Finding 5).
+    it (Finding 5). ``blend_shape_path`` places the BlendShape somewhere
+    other than nested under the mesh -- skel:blendShapeTargets is just a
+    relationship, so a real export can point it anywhere in the namespace.
     """
     default_prim_path = default_prim_path or skel_root_path
     stage = Usd.Stage.CreateNew(path)
@@ -73,7 +76,7 @@ def _build_character_stage(
     binding.CreateSkeletonRel().SetTargets([skel.GetPath()])
 
     if with_blendshape:
-        bs = UsdSkel.BlendShape.Define(stage, f"{skel_root_path}/Geom/box/blink")
+        bs = UsdSkel.BlendShape.Define(stage, blend_shape_path or f"{skel_root_path}/Geom/box/blink")
         bs.CreateOffsetsAttr(Vt.Vec3fArray([(0, 0, 0.1)] * 4))
         binding.CreateBlendShapesAttr(Vt.TokenArray(["blink"]))
         binding.CreateBlendShapeTargetsRel().SetTargets([bs.GetPath()])
@@ -683,6 +686,49 @@ def test_write_geo_layer_strips_skel_binding_api_applied_on_skel_root(tmp_path):
         assert not any(
             p.startswith("skel:") or p.startswith("primvars:skel:") for p in prim.GetPropertyNames()
         )
+
+
+def test_write_geo_layer_strips_skel_binding_api_from_inactive_mesh(tmp_path):
+    """Usd.Stage.Traverse()'s default predicate skips inactive prims, so the
+    SkelBindingAPI cleanup loop must use TraverseAll() -- otherwise a
+    deactivated skinned mesh keeps its skel:skeleton rel pointing at the
+    Skeleton that _write_geo_layer already removed.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    inactive_mesh = UsdGeom.Mesh.Define(stage, "/Character/Geom/inactive_box")
+    inactive_binding = UsdSkel.BindingAPI.Apply(inactive_mesh.GetPrim())
+    inactive_binding.CreateSkeletonRel().SetTargets([Sdf.Path("/Character/Skel")])
+    inactive_mesh.GetPrim().SetActive(False)
+    stage.GetRootLayer().Save()
+    geo_path = str(tmp_path / "character_geo.usd")
+
+    _write_geo_layer(stage, geo_path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    inactive_prim = geo_stage.GetPrimAtPath("/Character/Geom/inactive_box")
+    assert "SkelBindingAPI" not in inactive_prim.GetAppliedSchemas()
+    assert not any(
+        p.startswith("skel:") or p.startswith("primvars:skel:") for p in inactive_prim.GetPropertyNames()
+    )
+
+
+def test_write_skel_layer_copies_offsite_blend_shape(tmp_path):
+    """skel:blendShapeTargets is a relationship, not required to point under
+    the mesh's own subtree -- Sdf.CopySpec needs the destination ancestor
+    chain to exist first, same requirement as the Skeleton copy.
+    """
+    stage = _build_character_stage(
+        str(tmp_path / "character.usda"), blend_shape_path="/Character/Extra/blink"
+    )
+    bindings = _discover_bindings(stage)
+    skel_path = str(tmp_path / "character_skel.usd")
+
+    _write_skel_layer(stage, bindings, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    blink_prim = skel_stage.GetPrimAtPath("/Character/Extra/blink")
+    assert blink_prim.IsValid()
+    assert list(UsdSkel.BlendShape(blink_prim).GetOffsetsAttr().Get()) == [Gf.Vec3f(0, 0, 0.1)] * 4
 
 
 def test_split_character_usd_no_dangling_animation_source_from_skel_root_binding(tmp_path):
