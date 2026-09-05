@@ -7,6 +7,8 @@ is a plain function, not a registered Maya-USD Export Chaser plugin.
 
 import logging
 import os
+import shutil
+import tempfile
 from typing import List, Optional, Tuple
 
 from pxr import Sdf, Usd, UsdGeom, UsdSkel
@@ -169,6 +171,14 @@ def _copy_primvar(src_binding, dst_binding, get_src_pv, create_dst_pv) -> None:
     e.g. ``lambda b: b.GetJointIndicesPrimvar()`` and
     ``lambda b, constant, element_size: b.CreateJointIndicesPrimvar(constant, element_size)``.
     No-ops if the source primvar was never authored.
+
+    If the source primvar is indexed, ``Get()`` returns only the smaller
+    palette of unique values, not one entry per element -- the ``indices``
+    array is what maps each element back to a palette entry. Copying the
+    value array alone without the indices would silently turn an indexed
+    jointIndices/jointWeights primvar into a plain per-element one with
+    wrong values at every element, the same class of bug as an unhandled
+    skel:joints mapper.
     """
     src_pv = get_src_pv(src_binding)
     if not src_pv.IsDefined():
@@ -176,6 +186,10 @@ def _copy_primvar(src_binding, dst_binding, get_src_pv, create_dst_pv) -> None:
     is_constant = src_pv.GetInterpolation() == UsdGeom.Tokens.constant
     dst_pv = create_dst_pv(dst_binding, is_constant, src_pv.GetElementSize())
     dst_pv.Set(src_pv.Get())
+    if src_pv.IsIndexed():
+        dst_pv.SetIndices(src_pv.GetIndices())
+        if src_pv.GetUnauthoredValuesIndex() != -1:
+            dst_pv.SetUnauthoredValuesIndex(src_pv.GetUnauthoredValuesIndex())
 
 
 def _write_skel_layer(
@@ -382,7 +396,15 @@ def split_character_usd(
     if not os.path.isfile(character_usd_path):
         raise FileNotFoundError(f"USD file not found: {character_usd_path}")
 
-    stage = Usd.Stage.Open(character_usd_path)
+    # Sdf.CopySpec (used throughout the three writers) copies raw authored
+    # opinions, including a references/payloads list authored on some prim
+    # -- it does not resolve or drop composition arcs. Flattening first means
+    # every writer's Sdf.CopySpec source layer already has the arcs' content
+    # baked in as plain prim specs, so none of the three outputs can end up
+    # depending on an external file the split was supposed to make it
+    # independent of.
+    opened_stage = Usd.Stage.Open(character_usd_path)
+    stage = Usd.Stage.Open(opened_stage.Flatten(addSourceFileComment=False))
     bindings = _discover_bindings(stage)
     if not bindings:
         raise ValueError(f"No UsdSkel bindings found in: {character_usd_path}")
@@ -395,17 +417,30 @@ def split_character_usd(
     skel_path = os.path.join(out_dir, f"{base}_skel.usd")
     anim_path = os.path.join(out_dir, f"{base}_anim.usd")
 
+    # Write to a scratch directory first and only os.replace() the three
+    # outputs into place once all three succeed. A failed run must never
+    # touch a pre-existing geo_path/skel_path/anim_path from a prior
+    # successful split -- deleting those on failure would turn one bad
+    # re-run into silent data loss. tempfile.mkdtemp(dir=out_dir) keeps the
+    # scratch dir on the same filesystem as the destination so the final
+    # os.replace() is a same-filesystem rename, not a cross-device copy.
+    scratch_dir = tempfile.mkdtemp(dir=out_dir)
     try:
-        _write_geo_layer(stage, geo_path, hide_curves=hide_curves, curves_purpose_guide=curves_purpose_guide)
-        _write_skel_layer(stage, bindings, skel_path, hide_skeleton=hide_skeleton)
-        _write_anim_layer(stage, bindings, anim_path)
-    except Exception:
-        # Don't leave a partial split on disk -- downstream tooling globbing
-        # for *_geo.usd etc. can't distinguish a completed split from a failed one.
-        for output_path in (geo_path, skel_path, anim_path):
-            if os.path.exists(output_path):
-                os.remove(output_path)
-        raise
+        scratch_geo_path = os.path.join(scratch_dir, os.path.basename(geo_path))
+        scratch_skel_path = os.path.join(scratch_dir, os.path.basename(skel_path))
+        scratch_anim_path = os.path.join(scratch_dir, os.path.basename(anim_path))
+
+        _write_geo_layer(
+            stage, scratch_geo_path, hide_curves=hide_curves, curves_purpose_guide=curves_purpose_guide
+        )
+        _write_skel_layer(stage, bindings, scratch_skel_path, hide_skeleton=hide_skeleton)
+        _write_anim_layer(stage, bindings, scratch_anim_path)
+
+        os.replace(scratch_geo_path, geo_path)
+        os.replace(scratch_skel_path, skel_path)
+        os.replace(scratch_anim_path, anim_path)
+    finally:
+        shutil.rmtree(scratch_dir, ignore_errors=True)
 
     _logger.info(
         "Split %s -> geo=%s skel=%s anim=%s",
