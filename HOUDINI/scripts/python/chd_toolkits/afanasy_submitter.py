@@ -46,8 +46,8 @@ def validate_settings(settings, hou_module, is_file=os.path.isfile):
         raise ValueError("Job Priority must not be negative.")
 
     node = hou_module.node(settings.rop_path)
-    if node is None or not callable(getattr(node, "render", None)):
-        raise ValueError("Select a valid ROP node with render().")
+    if not isinstance(node, hou_module.RopNode):
+        raise ValueError("Select a valid ROP node (hou.RopNode).")
     return node
 
 
@@ -118,6 +118,7 @@ def _create_dialog_class(QtWidgets, hou_module):
             self.hython_edit = QtWidgets.QLineEdit(defaults["hython_path"])
             self.rop_edit = QtWidgets.QLineEdit()
             self.rop_edit.setReadOnly(True)
+            self.use_selected_rop = QtWidgets.QCheckBox("Use Selected ROP")
 
             self.frame_start_spin = self._spin(
                 -1_000_000, 1_000_000, defaults["frame_start"]
@@ -149,6 +150,7 @@ def _create_dialog_class(QtWidgets, hou_module):
             form.addRow("Job Name", self.job_name_edit)
             form.addRow("Hython", self._path_row(self.hython_edit, hython_button))
             form.addRow("ROP Node", self._path_row(self.rop_edit, rop_button))
+            form.addRow(self.use_selected_rop)
             form.addRow("Frame Start", self.frame_start_spin)
             form.addRow("Frame End", self.frame_end_spin)
             form.addRow("Frame Step", self.frame_step_spin)
@@ -189,10 +191,18 @@ def _create_dialog_class(QtWidgets, hou_module):
                 self.rop_edit.setText(path)
 
         def _settings_from_fields(self):
+            rop_path = self.rop_edit.text()
+            if self.use_selected_rop.isChecked():
+                selected = hou_module.selectedNodes()
+                if len(selected) != 1:
+                    raise ValueError("Select exactly one ROP node in Houdini.")
+                if not isinstance(selected[0], hou_module.RopNode):
+                    raise ValueError("The selected node must inherit from hou.RopNode.")
+                rop_path = selected[0].path()
             return SubmissionSettings(
                 job_name=self.job_name_edit.text(),
                 hython_path=self.hython_edit.text(),
-                rop_path=self.rop_edit.text(),
+                rop_path=rop_path,
                 frame_start=self.frame_start_spin.value(),
                 frame_end=self.frame_end_spin.value(),
                 frame_step=self.frame_step_spin.value(),
@@ -207,6 +217,17 @@ def _create_dialog_class(QtWidgets, hou_module):
                 import af
 
                 settings = self._settings_from_fields()
+                validate_settings(settings, hou_module)
+                choice = hou_module.ui.displayMessage(
+                    "Save the current HIP file and submit to Afanasy?\n\n"
+                    + hou_module.hipFile.path(),
+                    buttons=("OK", "Cancel"),
+                    default_choice=1,
+                    close_choice=1,
+                    title="Save and Submit",
+                )
+                if choice != 0:
+                    return
                 status, data = submit_job(settings, hou_module, af)
                 if not status:
                     raise RuntimeError(f"Afanasy submission failed: {data}")
