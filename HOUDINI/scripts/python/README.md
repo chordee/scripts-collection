@@ -8,6 +8,7 @@
 - COLMAP `points3D.bin` → Houdini 點雲
 - Nerfstudio `transforms.json` → Houdini 動畫相機
 - USD Value Clips stitcher（純 Python 函式介面，無 CLI）
+- Afanasy job submission（Houdini 內的 PySide6 面板）
 
 安裝設定請參考 [`HOUDINI/README.md`](../../README.md)。安裝完成後在 Houdini 的 Python shell / Python SOP / HDA event handler 即可：
 
@@ -32,10 +33,12 @@ HOUDINI/scripts/python/
 │   ├── core.py                Houdini / numpy / USD 核心 helper
 │   ├── colmap_points.py       COLMAP .bin → Houdini geometry
 │   ├── nerfstudio_cam.py      Nerfstudio transforms.json → Houdini 動畫相機
+│   ├── afanasy_submitter.py   PySide6 面板 → Afanasy job submission
 │   └── stitch_usd_clips.py    USD Value Clips stitcher（純 Python 函式介面）
 └── tests/
     ├── conftest.py            sys.path 補上 chd_toolkits 上層
     ├── run_hython.py          $HFS/bin/hython -m pytest tests/ 的 wrapper
+    ├── test_afanasy_submitter.py   command / submission / 面板流程（mock）
     ├── test_stitch_usd_clips.py    pxr-only；hython 或 plain Python 皆可
     ├── test_core_usd.py            core 的 USD 函式；hython only
     └── test_core_numpy.py          core 的 numpy 函式；hython only
@@ -49,6 +52,8 @@ HOUDINI/scripts/python/
 - `numpy` — core / colmap_points 需要
 - `pxr.Usd` / `pxr.UsdGeom` / `pxr.UsdShade` / `pxr.Sdf` / `pxr.Gf` — core / stitch_usd_clips 需要（Houdini 或 `pip install usd-core`）
 - `scipy`（**可選**；若存在則自動暴露 `chd_toolkits.scipy_convolve2d`）
+- `hou`、`PySide6` — afanasy_submitter 面板需要 Houdini 圖形介面環境
+- `af`（CGRU/Afanasy）— 提交時需要能在 Houdini 內 `import af`，並已配置 Afanasy server 連線
 
 ## 測試
 
@@ -76,7 +81,7 @@ HOUDINI/scripts/python/
 
 ### 在 plain Python 跑（可選）
 
-只有 `test_stitch_usd_clips.py` 是純 pxr，可以離開 Houdini 在 plain Python 跑：
+`test_stitch_usd_clips.py` 是純 pxr，可以離開 Houdini 在 plain Python 跑：
 
 ```shell
 pip install pytest usd-core
@@ -84,12 +89,20 @@ cd HOUDINI/scripts/python
 pytest tests/test_stitch_usd_clips.py
 ```
 
-其他測試會偵測 `hou` 不存在自動 skip（透過 `pytest.importorskip`）。
+`test_afanasy_submitter.py` 使用標準函式庫 `unittest`，以假的 Houdini、Qt 與 Afanasy 介面測試流程，可在 plain Python 執行，無須安裝 PySide6 或連線到 farm：
+
+```powershell
+# 在 HOUDINI/scripts/python 下，替換成已確認的 Python 執行檔完整路徑。
+& 'C:\path\to\python.exe' -m unittest discover -s tests -p test_afanasy_submitter.py -v
+```
+
+其餘需要 `hou` 的測試會在缺少它時自動 skip（透過 `pytest.importorskip`）。
 
 ### 測試覆蓋現況
 
 | 檔案 | 覆蓋 | 環境 |
 |---|---|---|
+| `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、job/block 組裝、面板預設值、ROP 選取、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
 | `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json` | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
@@ -102,6 +115,51 @@ pytest tests/test_stitch_usd_clips.py
 `tests/conftest.py::MockSopNode` 是給 `colmap_points` 用的最小 `hou.SopNode` stub（只實作 `.geometry()`），避免測試要真的 cook Python SOP。
 
 ## API
+
+### `afanasy_submitter` — Afanasy 提交面板
+
+在 Houdini 的 Python Shell 或 Python Shelf Tool 中執行：
+
+```python
+from chd_toolkits import afanasy_submitter
+
+afanasy_submitter.show()
+```
+
+`show()` 以 Houdini 主視窗為 parent 開啟 PySide6 面板並回傳 dialog；重複呼叫會關閉先前的面板。
+
+#### 面板欄位
+
+| 欄位 | 預設 | 用途 |
+|---|---|---|
+| Job Name | 目前 HIP 檔名（不含副檔名） | Afanasy job 名稱 |
+| Hython | 目前 Houdini 的 `$HFS/bin/hython.exe`（非 Windows 為 `hython`） | Worker 執行檔路徑，可修改或 Browse |
+| ROP Node | 空白 | 用 Browse 開啟 Houdini 節點選擇器 |
+| Use Selected ROP | 未勾選 | 改用按下 Submit 當下的 Houdini 選取節點，取代 ROP Node 欄位 |
+| Frame Start / End | 目前 playback range | 渲染起訖幀 |
+| Frame Step | `1` | 幀增量，同時傳給 Afanasy 與 ROP |
+| Frames per task | `1` | 每個 task 的幀數，交由 Afanasy numeric block 拆分 |
+| Capacity | `800` | `block.setCapacity()` |
+| Job Priority | `80` | `job.setPriority()` |
+
+勾選 **Use Selected ROP** 時必須恰好選取一個節點，且通過 `isinstance(node, hou.RopNode)`，可接受其子類別。未選取、多選或型別不符都會中止提交；Browse 指定的節點也使用同樣的型別檢查。
+
+#### 提交流程
+
+1. 按 Submit 後驗證欄位與 ROP。尚未命名的新 HIP 必須先 Save As；Frame Start 不得大於 End，Step、Frames per task 與 Capacity 必須為正數。
+2. 顯示 **Save and Submit** 對話框與目前 HIP 路徑。按 **OK** 才呼叫 `hou.hipFile.save()`；按 **Cancel** 或關閉對話框就終止，不存檔、不提交。預設按鈕為 Cancel。
+3. 儲存成功後，在 Houdini 內使用 `af` 建立一個 `af.Job` 和一個 service 為 `hbatch` 的 `af.Block`，設定 command、numeric frame range、capacity 與 priority，再呼叫 `job.send()`。
+4. 顯示提交結果；驗證、存檔或送出失敗時顯示錯誤訊息。處理期間 Submit 暫時停用，結束或取消後恢復。
+
+Worker 實際執行的是 `hython -c "..."`：解碼 HIP／ROP 路徑、載入 HIP、找到 ROP，再呼叫 `render(frame_range=(task_start, task_end, frame_step))`。HIP 與 ROP 路徑以 UTF-8 URL-safe Base64 嵌入 command；兩個 `@#@` 由 Afanasy 替換成 task 起訖幀。
+
+Worker 不需要安裝 `chd_toolkits`，也不需要共用臨時 Python 腳本；但必須能存取指定的 hython、HIP、場景資產及輸出路徑，並具備所需授權。工具沒有自動路徑映射，也不建立 HIP 快照，後續再儲存同一份 HIP 會影響尚未載入它的 tasks。
+
+`submit_job()` 目前不會呼叫 `job.setNativeOS()` 限制 job 只跑在提交端的原生作業系統——這是刻意的假設：目前 render farm 全部是 Windows worker，尚無混合 OS 的情境。若未來 farm 加入非 Windows worker，需要補上 `setNativeOS()`（或依實際情境改用 `setAnyOS()`），否則命令列（`hython.exe`、路徑分隔符號等）在跨平台派送時會失敗。
+
+上述確認對話框屬於面板流程；直接呼叫底層 `submit_job()` 會驗證、存檔並提交，不顯示確認視窗。自動化測試涵蓋 mock 流程，不代表已驗證真實面板顯示或 farm 渲染。
+
+---
 
 ### `core` — Houdini / numpy / USD helpers
 
