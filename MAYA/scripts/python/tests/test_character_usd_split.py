@@ -230,6 +230,33 @@ def test_write_skel_layer_hide_skeleton_default_off(tmp_path):
     assert not skel_imageable.GetVisibilityAttr().IsAuthored()
 
 
+def test_copy_primvar_preserves_indexed_primvar_indices(tmp_path):
+    """If jointIndices/jointWeights is an indexed UsdGeom.Primvar, Get()
+    returns only the small palette of unique values, not one value per
+    element -- the separate indices array maps elements back to the
+    palette. Copying values without indices silently corrupts every
+    element's skinning, the same failure mode as an unhandled skel:joints
+    mapper.
+    """
+    stage = _build_character_stage(str(tmp_path / "character.usda"))
+    mesh_binding = UsdSkel.BindingAPI(stage.GetPrimAtPath("/Character/Geom/box"))
+    joint_indices = mesh_binding.CreateJointIndicesPrimvar(False, 1)
+    joint_indices.Set(Vt.IntArray([0, 1]))
+    joint_indices.SetIndices(Vt.IntArray([0, 1, 1, 0]))
+    stage.GetRootLayer().Save()
+    bindings = _discover_bindings(stage)
+    skel_path = str(tmp_path / "character_skel.usd")
+
+    _write_skel_layer(stage, bindings, skel_path)
+
+    skel_stage = Usd.Stage.Open(skel_path)
+    out_binding = UsdSkel.BindingAPI(skel_stage.GetPrimAtPath("/Character/Geom/box"))
+    out_joint_indices = out_binding.GetJointIndicesPrimvar()
+    assert out_joint_indices.IsIndexed()
+    assert list(out_joint_indices.Get()) == [0, 1]
+    assert list(out_joint_indices.GetIndices()) == [0, 1, 1, 0]
+
+
 def test_write_skel_layer_is_standalone_and_composes_with_geo(tmp_path):
     stage = _build_character_stage(str(tmp_path / "character.usda"))
     bindings = _discover_bindings(stage)
@@ -339,6 +366,52 @@ def test_write_anim_layer_is_standalone_with_correct_time_samples(tmp_path):
     assert list(anim_schema.GetTranslationsAttr().Get(2.0)) == [Gf.Vec3f(0, 0, 0), Gf.Vec3f(0, 2, 0)]
     assert anim_schema.GetBlendShapeWeightsAttr().GetTimeSamples() == [1.0, 2.0]
     assert list(anim_schema.GetBlendShapeWeightsAttr().Get(2.0)) == [1.0]
+
+
+def test_split_character_usd_flattens_away_references_in_all_three_outputs(tmp_path):
+    """Sdf.CopySpec (used by all three writers) copies raw authored opinions
+    verbatim, including a references/payloads list -- it doesn't resolve or
+    drop composition arcs. If the source character USD has a reference
+    authored somewhere in the geo, Skeleton, or Animation subtree (unusual
+    for a flat mayaUSDExport but not impossible), copying it verbatim would
+    leave the "independent" outputs still depending on that external file.
+    split_character_usd must flatten the source first so every output is
+    genuinely self-contained.
+    """
+    ref_target_path = str(tmp_path / "referenced.usda")
+    ref_stage = Usd.Stage.CreateNew(ref_target_path)
+    ref_prim = UsdGeom.Xform.Define(ref_stage, "/Refd")
+    ref_prim.GetPrim().CreateAttribute("marker", Sdf.ValueTypeNames.Bool).Set(True)
+    ref_stage.SetDefaultPrim(ref_prim.GetPrim())
+    ref_stage.GetRootLayer().Save()
+
+    src_path = str(tmp_path / "character.usda")
+    stage = _build_character_stage(src_path)
+    UsdGeom.Xform.Define(stage, "/Character/Geom/refd_geo").GetPrim().GetReferences().AddReference(
+        ref_target_path
+    )
+    UsdGeom.Xform.Define(stage, "/Character/Skel/refd_skel").GetPrim().GetReferences().AddReference(
+        ref_target_path
+    )
+    UsdGeom.Xform.Define(stage, "/Character/Skel/Anim/refd_anim").GetPrim().GetReferences().AddReference(
+        ref_target_path
+    )
+    stage.GetRootLayer().Save()
+
+    geo_path, skel_path, anim_path = split_character_usd(src_path)
+
+    geo_stage = Usd.Stage.Open(geo_path)
+    skel_stage = Usd.Stage.Open(skel_path)
+    anim_stage = Usd.Stage.Open(anim_path)
+
+    assert geo_stage.GetRootLayer().GetExternalReferences() == ()
+    assert skel_stage.GetRootLayer().GetExternalReferences() == ()
+    assert anim_stage.GetRootLayer().GetExternalReferences() == ()
+
+    # The referenced content is baked in as plain prim specs, not dropped.
+    assert geo_stage.GetPrimAtPath("/Character/Geom/refd_geo").GetAttribute("marker").Get() is True
+    assert skel_stage.GetPrimAtPath("/Character/Skel/refd_skel").GetAttribute("marker").Get() is True
+    assert anim_stage.GetPrimAtPath("/Character/Skel/Anim/refd_anim").GetAttribute("marker").Get() is True
 
 
 def test_split_character_usd_end_to_end(tmp_path):
@@ -474,6 +547,51 @@ def test_split_character_usd_cleans_up_partial_output_on_failure(tmp_path, monke
     assert not os.path.exists(str(tmp_path / "character_geo.usd"))
     assert not os.path.exists(str(tmp_path / "character_skel.usd"))
     assert not os.path.exists(str(tmp_path / "character_anim.usd"))
+    assert sorted(os.listdir(str(tmp_path))) == ["character.usda"]
+
+
+def test_split_character_usd_preserves_preexisting_outputs_on_failure(tmp_path, monkeypatch):
+    """A failed re-run must not delete outputs from a prior successful split
+    at the same paths -- only this run's own scratch files, never the
+    caller's existing geo_path/skel_path/anim_path.
+    """
+    import utils.character_usd_split as split_mod
+
+    path = str(tmp_path / "character.usda")
+    _build_character_stage(path)
+
+    existing = {
+        "character_geo.usd": "preexisting geo",
+        "character_skel.usd": "preexisting skel",
+        "character_anim.usd": "preexisting anim",
+    }
+    for name, content in existing.items():
+        (tmp_path / name).write_text(content)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(split_mod, "_write_anim_layer", _boom)
+
+    with pytest.raises(RuntimeError):
+        split_character_usd(path)
+
+    for name, content in existing.items():
+        assert (tmp_path / name).read_text() == content
+
+
+def test_split_character_usd_no_leftover_scratch_dir(tmp_path):
+    path = str(tmp_path / "character.usda")
+    _build_character_stage(path)
+
+    split_character_usd(path)
+
+    assert sorted(os.listdir(str(tmp_path))) == [
+        "character.usda",
+        "character_anim.usd",
+        "character_geo.usd",
+        "character_skel.usd",
+    ]
 
 
 def test_write_anim_layer_copies_stage_time_metadata(tmp_path):
