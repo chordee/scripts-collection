@@ -166,10 +166,8 @@ def _to_gf_matrix4d(
     if isinstance(matrix, hou.Matrix4):
         return Gf.Matrix4d(*matrix.asTuple())
     if isinstance(matrix, np.ndarray):
-        if matrix.shape == (4, 4):
-            return Gf.Matrix4d(*matrix.flatten().tolist())
-        if matrix.size == 16:
-            return Gf.Matrix4d(*matrix.tolist())
+        if matrix.shape == (4, 4) or matrix.size == 16:
+            return Gf.Matrix4d(*matrix.reshape(-1).tolist())
     if isinstance(matrix, (tuple, list)):
         if len(matrix) == 16:
             return Gf.Matrix4d(*matrix)
@@ -241,14 +239,15 @@ def set_prim_transform(
             opSuffix=op_suffix,
         )
 
-    # Ensure matrix_op is prepended (index 0) in xformOpOrder
+    # Ensure matrix_op is prepended (index 0) in xformOpOrder while preserving resetXformStack
+    reset_xform_stack = xform.GetResetXformStack()
     ordered_ops = [
         op
         for op in xform.GetOrderedXformOps()
         if op.GetAttr().GetName() != matrix_op.GetAttr().GetName()
     ]
     ordered_ops.insert(0, matrix_op)
-    xform.SetXformOpOrder(ordered_ops)
+    xform.SetXformOpOrder(ordered_ops, resetXformStack=reset_xform_stack)
 
     if replace_existing_local:
         # USD computes local transformation from right to left across ordered ops:

@@ -694,6 +694,26 @@ def test_set_prim_transform_matrix_types():
     op2 = set_prim_transform(xform, flat_list, op_suffix="fromList")
     assert op2.Get()[3][0] == pytest.approx(7.0)
 
+    import numpy as np
+
+    arr_1x16 = np.array([flat_list])
+    op3 = set_prim_transform(xform, arr_1x16, op_suffix="fromNp1x16")
+    assert op3.Get()[3][0] == pytest.approx(7.0)
+
+
+def test_set_prim_transform_preserves_reset_xform_stack():
+    stage = Usd.Stage.CreateInMemory()
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+    xform.SetResetXformStack(True)
+    assert xform.GetResetXformStack() is True
+
+    target_mat = Gf.Matrix4d().SetTranslate(Gf.Vec3d(1.0, 2.0, 3.0))
+    set_prim_transform(xform, target_mat)
+
+    assert xform.GetResetXformStack() is True
+    assert xform.GetXformOpOrderAttr().Get()[0] == "!resetXformStack!"
+    assert xform.GetXformOpOrderAttr().Get()[1] == "xformOp:transform:sopTransform"
+
 
 def test_set_prim_transform_animated():
     stage = Usd.Stage.CreateInMemory()
