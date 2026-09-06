@@ -104,7 +104,7 @@ pytest tests/test_stitch_usd_clips.py
 |---|---|---|
 | `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、job/block 組裝、面板預設值、ROP 選取、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
-| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json` | hython only |
+| `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json`、`set_prim_transform`（直接套用、replace_existing_local 逆矩陣抵消、recook 冪等性、型別支援、動態 timecode） | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
 | `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
 | `test_colmap_points.py` | `read_points3d_binary_to_geo`（合成 COLMAP `.bin`、位置/色彩/error/track skip、`geo.clear()`、missing file、非 `.bin` 副檔名、截斷檔案 raise 且清空 geometry） | hython only |
@@ -261,6 +261,29 @@ primitive_xform(
 - `prim`：`Usd.Prim`；非 `Xformable` 回 `None`。
 - `time`：`int` / `float` / `Usd.TimeCode`，預設 `Usd.TimeCode.Default()`。
 - 回傳：`hou.Matrix4`，由 `Gf.Matrix4d` 的四個 row 顯式構造；非 Xformable 回 `None`。
+
+#### `set_prim_transform`
+
+```python
+set_prim_transform(
+    prim: Union[Usd.Prim, UsdGeom.Xformable],
+    matrix: Union[Gf.Matrix4d, hou.Matrix4, Sequence[float], np.ndarray],
+    time: Union[int, float, Usd.TimeCode] = Usd.TimeCode.Default(),
+    op_suffix: str = "sopTransform",
+    replace_existing_local: bool = False,
+) -> UsdGeom.XformOp
+```
+
+在 USD Prim 上設定 `xformOp:transform`，並將其 prepend 到 `xformOpOrder` 的最前端（index 0）。支援在 Houdini Python LOP / Inline Script 中快速套用 SOP 或外部矩陣。
+
+- `prim`：`Usd.Prim` 或 `UsdGeom.Xformable`。
+- `matrix`：支援 `Gf.Matrix4d`、`hou.Matrix4`、16-float Sequence（list/tuple）、4x4 巢狀序列或 numpy array。
+- `time`：`int` / `float` / `Usd.TimeCode`，預設 `Usd.TimeCode.Default()`。若為動態變換可傳入當前 frame（如 `hou.frame()`）。
+- `op_suffix`：`xformOp:transform` 的 suffix，預設 `"sopTransform"`。若已存在同名 op 則重複使用，避免每次 cook 重複堆疊 op。
+- `replace_existing_local`：`bool`，預設 `False`。
+  - `False`：直接將目標矩陣寫入該 op（作為 local pre-transform）。
+  - `True`：排除該 op 自身，計算 Prim 上原有其他 xformOps 的 local transform 並取逆矩陣抵消，使最終的 local transformation 剛好等於 `matrix`。
+- 回傳：`UsdGeom.XformOp`，已建立或更新的 transform op。
 
 #### `get_material_from_prim`
 

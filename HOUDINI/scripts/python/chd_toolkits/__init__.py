@@ -20,6 +20,7 @@ try:
         convolve2d,
         compute_prim_scale,
         primitive_xform,
+        set_prim_transform,
         get_material_from_prim,
         get_all_asset_paths_from_prim,
         get_clip_names,
