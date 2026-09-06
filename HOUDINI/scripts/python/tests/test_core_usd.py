@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("hou")
 pytest.importorskip("pxr")
 
-from pxr import Sdf, Usd, UsdGeom, UsdShade, UsdVol
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdShade, UsdVol
 
 from chd_toolkits.core import (
     compute_prim_scale,
@@ -26,6 +26,7 @@ from chd_toolkits.core import (
     get_clip_names,
     get_clip_sequences_from_prim,
     get_material_from_prim,
+    set_prim_transform,
 )
 
 
@@ -608,3 +609,137 @@ def test_dump_json_writes_file_and_returns_none(tmp_path):
     assert result is None
     assert out_path.exists()
     assert "a.usda" in out_path.read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# set_prim_transform
+# ---------------------------------------------------------------------------
+
+
+def test_set_prim_transform_direct_apply():
+    stage = Usd.Stage.CreateInMemory()
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+    target_mat = Gf.Matrix4d().SetTranslate(Gf.Vec3d(10.0, 20.0, 30.0))
+
+    op = set_prim_transform(xform.GetPrim(), target_mat)
+    assert op.GetOpName() == "xformOp:transform:sopTransform"
+    assert xform.GetOrderedXformOps()[0] == op
+
+    local_mat = xform.GetLocalTransformation()
+    for row in range(4):
+        for col in range(4):
+            assert local_mat[row][col] == pytest.approx(target_mat[row][col])
+
+
+def test_set_prim_transform_replace_existing_local():
+    stage = Usd.Stage.CreateInMemory()
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+    xform.AddTranslateOp().Set(Gf.Vec3d(5.0, 0.0, 0.0))
+    xform.AddScaleOp().Set(Gf.Vec3d(2.0, 2.0, 2.0))
+
+    target_mat = Gf.Matrix4d().SetTranslate(Gf.Vec3d(100.0, 200.0, 300.0))
+    set_prim_transform(xform, target_mat, replace_existing_local=True)
+
+    local_mat = xform.GetLocalTransformation()
+    for row in range(4):
+        for col in range(4):
+            assert local_mat[row][col] == pytest.approx(target_mat[row][col])
+
+
+def test_set_prim_transform_recook_idempotent():
+    stage = Usd.Stage.CreateInMemory()
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+    xform.AddRotateXOp().Set(45.0)
+
+    target_mat = Gf.Matrix4d().SetTranslate(Gf.Vec3d(1.0, 2.0, 3.0))
+    set_prim_transform(xform, target_mat, replace_existing_local=True)
+    first_val = xform.GetPrim().GetAttribute("xformOp:transform:sopTransform").Get()
+
+    set_prim_transform(xform, target_mat, replace_existing_local=True)
+    second_val = xform.GetPrim().GetAttribute("xformOp:transform:sopTransform").Get()
+
+    for row in range(4):
+        for col in range(4):
+            assert first_val[row][col] == pytest.approx(second_val[row][col])
+    local_mat = xform.GetLocalTransformation()
+    for row in range(4):
+        for col in range(4):
+            assert local_mat[row][col] == pytest.approx(target_mat[row][col])
+
+
+def test_set_prim_transform_custom_suffix():
+    stage = Usd.Stage.CreateInMemory()
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+    op = set_prim_transform(xform, Gf.Matrix4d(1.0), op_suffix="alignOffset")
+    assert op.GetOpName() == "xformOp:transform:alignOffset"
+
+
+def test_set_prim_transform_matrix_types():
+    import hou
+
+    stage = Usd.Stage.CreateInMemory()
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+
+    hou_mat = hou.hmath.buildTranslate((3.0, 4.0, 5.0))
+    op = set_prim_transform(xform, hou_mat)
+    val = op.Get()
+    assert val[3][0] == pytest.approx(3.0)
+
+    flat_list = [
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        7.0, 8.0, 9.0, 1.0,
+    ]
+    op2 = set_prim_transform(xform, flat_list, op_suffix="fromList")
+    assert op2.Get()[3][0] == pytest.approx(7.0)
+
+    import numpy as np
+
+    arr_1x16 = np.array([flat_list])
+    op3 = set_prim_transform(xform, arr_1x16, op_suffix="fromNp1x16")
+    assert op3.Get()[3][0] == pytest.approx(7.0)
+
+
+def test_set_prim_transform_preserves_reset_xform_stack():
+    stage = Usd.Stage.CreateInMemory()
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+    xform.SetResetXformStack(True)
+    assert xform.GetResetXformStack() is True
+
+    target_mat = Gf.Matrix4d().SetTranslate(Gf.Vec3d(1.0, 2.0, 3.0))
+    set_prim_transform(xform, target_mat)
+
+    assert xform.GetResetXformStack() is True
+    assert xform.GetXformOpOrderAttr().Get()[0] == "!resetXformStack!"
+    assert xform.GetXformOpOrderAttr().Get()[1] == "xformOp:transform:sopTransform"
+
+
+def test_set_prim_transform_animated():
+    stage = Usd.Stage.CreateInMemory()
+    xform = UsdGeom.Xform.Define(stage, "/World/Geo")
+
+    mat_f1 = Gf.Matrix4d().SetTranslate(Gf.Vec3d(1.0, 0.0, 0.0))
+    mat_f2 = Gf.Matrix4d().SetTranslate(Gf.Vec3d(2.0, 0.0, 0.0))
+
+    set_prim_transform(xform, mat_f1, time=1.0)
+    set_prim_transform(xform, mat_f2, time=2.0)
+
+    attr = xform.GetPrim().GetAttribute("xformOp:transform:sopTransform")
+    assert attr.Get(1.0)[3][0] == pytest.approx(1.0)
+    assert attr.Get(2.0)[3][0] == pytest.approx(2.0)
+
+
+def test_set_prim_transform_rejects_invalid_inputs():
+    stage = Usd.Stage.CreateInMemory()
+    scope = stage.DefinePrim("/Scope", "Scope")
+
+    with pytest.raises(ValueError, match="Invalid or non-Xformable"):
+        set_prim_transform(scope, Gf.Matrix4d(1.0))
+
+    with pytest.raises(TypeError, match="Expected Usd.Prim"):
+        set_prim_transform("not_a_prim", Gf.Matrix4d(1.0))
+
+    xform = UsdGeom.Xform.Define(stage, "/Geo")
+    with pytest.raises(TypeError, match="Cannot convert"):
+        set_prim_transform(xform, "invalid_matrix")

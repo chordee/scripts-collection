@@ -3,7 +3,7 @@
 import importlib.util
 import json
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -155,6 +155,120 @@ def primitive_xform(
     usd_xform = xform.ComputeLocalToWorldTransform(time)
     rows = tuple(tuple(row) for row in usd_xform)
     return hou.Matrix4(rows)
+
+
+def _to_gf_matrix4d(
+    matrix: Union[Gf.Matrix4d, hou.Matrix4, Sequence[float], np.ndarray]
+) -> Gf.Matrix4d:
+    """Convert various matrix representations to pxr.Gf.Matrix4d."""
+    if isinstance(matrix, Gf.Matrix4d):
+        return matrix
+    if isinstance(matrix, hou.Matrix4):
+        return Gf.Matrix4d(*matrix.asTuple())
+    if isinstance(matrix, np.ndarray):
+        if matrix.shape == (4, 4) or matrix.size == 16:
+            return Gf.Matrix4d(*matrix.reshape(-1).tolist())
+    if isinstance(matrix, (tuple, list)):
+        if len(matrix) == 16:
+            return Gf.Matrix4d(*matrix)
+        if len(matrix) == 4 and all(
+            isinstance(row, (tuple, list)) and len(row) == 4 for row in matrix
+        ):
+            flat = [val for row in matrix for val in row]
+            return Gf.Matrix4d(*flat)
+    raise TypeError(f"Cannot convert {type(matrix).__name__} to Gf.Matrix4d")
+
+
+def set_prim_transform(
+    prim: Union[Usd.Prim, UsdGeom.Xformable],
+    matrix: Union[Gf.Matrix4d, hou.Matrix4, Sequence[float], np.ndarray],
+    time: Union[int, float, Usd.TimeCode] = Usd.TimeCode.Default(),
+    op_suffix: str = "sopTransform",
+    replace_existing_local: bool = False,
+) -> UsdGeom.XformOp:
+    """Set a transform op on a prim, prepending it to xformOpOrder.
+
+    Parameters
+    ----------
+    prim : Usd.Prim or UsdGeom.Xformable
+        The target USD prim to transform.
+    matrix : Gf.Matrix4d, hou.Matrix4, Sequence[float], or np.ndarray
+        The 4x4 transformation matrix to apply.
+    time : int, float, or Usd.TimeCode, optional
+        The time sample to set (default is Usd.TimeCode.Default()).
+    op_suffix : str, optional
+        The suffix for the xformOp attribute (default: "sopTransform").
+    replace_existing_local : bool, optional
+        If False (default), the matrix is directly applied as a local pre-transform.
+        If True, compensates for any other existing xformOps on the prim so that
+        the resulting local transformation equals `matrix`.
+
+    Returns
+    -------
+    UsdGeom.XformOp
+        The created or updated transform op.
+    """
+    if isinstance(prim, UsdGeom.Xformable):
+        xform = prim
+        usd_prim = prim.GetPrim()
+    elif isinstance(prim, Usd.Prim):
+        usd_prim = prim
+        xform = UsdGeom.Xformable(prim)
+    else:
+        raise TypeError(
+            f"Expected Usd.Prim or UsdGeom.Xformable, got {type(prim).__name__}"
+        )
+
+    if not usd_prim.IsValid() or not xform:
+        raise ValueError(f"Invalid or non-Xformable prim: {prim}")
+
+    target_matrix = _to_gf_matrix4d(matrix)
+
+    if not isinstance(time, Usd.TimeCode):
+        time = Usd.TimeCode(time)
+
+    attr_name = (
+        f"xformOp:transform:{op_suffix}" if op_suffix else "xformOp:transform"
+    )
+
+    if usd_prim.HasAttribute(attr_name):
+        matrix_op = UsdGeom.XformOp(usd_prim.GetAttribute(attr_name))
+    else:
+        matrix_op = xform.AddTransformOp(
+            precision=UsdGeom.XformOp.PrecisionDouble,
+            opSuffix=op_suffix,
+        )
+
+    # Ensure matrix_op is prepended (index 0) in xformOpOrder while preserving resetXformStack
+    reset_xform_stack = xform.GetResetXformStack()
+    ordered_ops = [
+        op
+        for op in xform.GetOrderedXformOps()
+        if op.GetAttr().GetName() != matrix_op.GetAttr().GetName()
+    ]
+    ordered_ops.insert(0, matrix_op)
+    xform.SetXformOpOrder(ordered_ops, resetXformStack=reset_xform_stack)
+
+    if replace_existing_local:
+        # USD computes local transformation from right to left across ordered ops:
+        # LocalTransform = Op[N-1] * ... * Op[1] * Op[0]
+        # Since matrix_op is Op[0], LocalTransform = OtherOpsTransform * Op[0].
+        # To make LocalTransform == target_matrix:
+        # OtherOpsTransform * Op[0] = target_matrix  =>  Op[0] = OtherOpsTransform.GetInverse() * target_matrix
+        other_ops = [
+            op
+            for op in xform.GetOrderedXformOps()
+            if op.GetAttr().GetName() != matrix_op.GetAttr().GetName()
+        ]
+        other_local = Gf.Matrix4d(1.0)
+        for op in reversed(other_ops):
+            other_local = other_local * op.GetOpTransform(time)
+        value_to_set = other_local.GetInverse() * target_matrix
+    else:
+        value_to_set = target_matrix
+
+    matrix_op.Set(value_to_set, time)
+    return matrix_op
 
 
 # ---------------------------------------------------------------------------
