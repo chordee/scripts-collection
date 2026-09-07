@@ -222,6 +222,10 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertFalse(is_allowed_env_var("SECRET_KEY"))
         self.assertFalse(is_allowed_env_var("FOO_VAR"))
         self.assertFalse(is_allowed_env_var("USER"))
+        self.assertFalse(is_allowed_env_var("REZ_AUTH_TOKEN"))
+        self.assertFalse(is_allowed_env_var("JOB_PASSWORD"))
+        self.assertFalse(is_allowed_env_var("RP_SECRET_KEY"))
+        self.assertFalse(is_allowed_env_var("PUB_CREDENTIALS"))
 
     def test_submit_job_injects_environment_variables(self):
         hou_module = FakeHou()
@@ -234,6 +238,8 @@ class SubmitterJobTests(unittest.TestCase):
             "JOB_NAME": "proj_a",
             "AXIOM_DIR": "C:/axiom",
             "REZ_ENV": "1",
+            "REZ_AUTH_TOKEN": "secret_token",
+            "JOB_PASSWORD": "secret_pass",
             "UNAPPROVED_SECRET": "should_not_pass",
         }
         with mock.patch.dict(os.environ, test_env, clear=True):
@@ -252,6 +258,8 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertEqual(block.env.get("AXIOM_DIR"), "C:/axiom")
         self.assertEqual(block.env.get("REZ_ENV"), "1")
         self.assertNotIn("UNAPPROVED_SECRET", block.env)
+        self.assertNotIn("REZ_AUTH_TOKEN", block.env)
+        self.assertNotIn("JOB_PASSWORD", block.env)
 
     def test_submit_job_graceful_when_block_lacks_setenv(self):
         class BlockWithoutSetEnv:

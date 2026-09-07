@@ -23,10 +23,22 @@ ALLOWED_ENV_NAMES = frozenset(
     {"PATH", "PYTHONPATH", "SIDEFXLABS", "HOUDINI_PATH", "HOUDINI_CGRU_PATH"}
 )
 ALLOWED_ENV_PREFIXES = ("CGRU_", "RP_", "PUB_", "JOB_", "AXIOM_", "REZ_")
+DISALLOWED_ENV_SUBSTRINGS = (
+    "KEY",
+    "TOKEN",
+    "PASSWORD",
+    "SECRET",
+    "PASSWD",
+    "CREDENTIAL",
+    "AUTH",
+)
 
 
 def is_allowed_env_var(name: str) -> bool:
     """Return True if the environment variable is approved for farm propagation."""
+    upper_name = name.upper()
+    if any(sub in upper_name for sub in DISALLOWED_ENV_SUBSTRINGS):
+        return False
     return name in ALLOWED_ENV_NAMES or any(
         name.startswith(prefix) for prefix in ALLOWED_ENV_PREFIXES
     )
