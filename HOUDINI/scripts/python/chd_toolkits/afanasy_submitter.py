@@ -27,8 +27,10 @@ DISALLOWED_ENV_SUBSTRINGS = (
     "KEY",
     "TOKEN",
     "PASSWORD",
+    "PASS",
     "SECRET",
     "PASSWD",
+    "PWD",
     "CREDENTIAL",
     "AUTH",
 )

@@ -148,7 +148,7 @@ afanasy_submitter.show()
 
 1. 按 Submit 後驗證欄位與 ROP。尚未命名的新 HIP 必須先 Save As；Frame Start 不得大於 End，Step、Frames per task 與 Capacity 必須為正數。
 2. 顯示 **Save and Submit** 對話框與目前 HIP 路徑。按 **OK** 才呼叫 `hou.hipFile.save()`；按 **Cancel** 或關閉對話框就終止，不存檔、不提交。預設按鈕為 Cancel。
-3. 儲存成功後，在 Houdini 內使用 `af` 建立一個 `af.Job` 和一個 service 為 `hbatch` 的 `af.Block`，設定 command、numeric frame range、capacity 與 priority。若該 block 提供且支援呼叫 `setEnv`，則將當前 session 中經過篩選的環境變數注入（包含精確名稱 `PATH`、`PYTHONPATH`、`SIDEFXLABS`、`HOUDINI_PATH`、`HOUDINI_CGRU_PATH`，以及符合前綴 `CGRU_*`、`RP_*`、`PUB_*`、`JOB_*`、`AXIOM_*`、`REZ_*` 的變數；即使符合前綴，任何含有 `KEY`、`TOKEN`、`PASSWORD`、`SECRET`、`PASSWD`、`CREDENTIAL`、`AUTH` 等敏感字眼的變數皆會嚴格排除）；若 block 不具備 `setEnv` 則略過注入並保持流程正常運作，最後呼叫 `job.send()`。
+3. 儲存成功後，在 Houdini 內使用 `af` 建立一個 `af.Job` 和一個 service 為 `hbatch` 的 `af.Block`，設定 command、numeric frame range、capacity 與 priority。若該 block 提供且支援呼叫 `setEnv`，則將當前 session 中經過篩選的環境變數注入（包含精確名稱 `PATH`、`PYTHONPATH`、`SIDEFXLABS`、`HOUDINI_PATH`、`HOUDINI_CGRU_PATH`，以及符合前綴 `CGRU_*`、`RP_*`、`PUB_*`、`JOB_*`、`AXIOM_*`、`REZ_*` 的變數；即使符合前綴，任何含有 `KEY`、`TOKEN`、`PASSWORD`、`PASS`、`SECRET`、`PASSWD`、`PWD`、`CREDENTIAL`、`AUTH` 等敏感字眼的變數皆會嚴格排除）；若 block 不具備 `setEnv` 則略過注入並保持流程正常運作，最後呼叫 `job.send()`。
 4. 顯示提交結果；驗證、存檔或送出失敗時顯示錯誤訊息。處理期間 Submit 暫時停用，結束或取消後恢復。
 
 Worker 實際執行的是 `hython -c "..."`：解碼 HIP／ROP 路徑、載入 HIP、找到 ROP，再呼叫 `render(frame_range=(task_start, task_end, frame_step))`。HIP 與 ROP 路徑以 UTF-8 URL-safe Base64 嵌入 command；兩個 `@#@` 由 Afanasy 替換成 task 起訖幀。

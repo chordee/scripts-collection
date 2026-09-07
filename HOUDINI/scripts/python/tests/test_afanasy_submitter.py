@@ -224,6 +224,8 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertFalse(is_allowed_env_var("USER"))
         self.assertFalse(is_allowed_env_var("REZ_AUTH_TOKEN"))
         self.assertFalse(is_allowed_env_var("JOB_PASSWORD"))
+        self.assertFalse(is_allowed_env_var("JOB_PWD"))
+        self.assertFalse(is_allowed_env_var("REZ_PASS"))
         self.assertFalse(is_allowed_env_var("RP_SECRET_KEY"))
         self.assertFalse(is_allowed_env_var("PUB_CREDENTIALS"))
 
@@ -240,6 +242,8 @@ class SubmitterJobTests(unittest.TestCase):
             "REZ_ENV": "1",
             "REZ_AUTH_TOKEN": "secret_token",
             "JOB_PASSWORD": "secret_pass",
+            "JOB_PWD": "secret_pwd",
+            "REZ_PASS": "secret_pass2",
             "UNAPPROVED_SECRET": "should_not_pass",
         }
         with mock.patch.dict(os.environ, test_env, clear=True):
@@ -260,6 +264,8 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertNotIn("UNAPPROVED_SECRET", block.env)
         self.assertNotIn("REZ_AUTH_TOKEN", block.env)
         self.assertNotIn("JOB_PASSWORD", block.env)
+        self.assertNotIn("JOB_PWD", block.env)
+        self.assertNotIn("REZ_PASS", block.env)
 
     def test_submit_job_graceful_when_block_lacks_setenv(self):
         class BlockWithoutSetEnv:
