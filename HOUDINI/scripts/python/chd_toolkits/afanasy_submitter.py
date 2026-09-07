@@ -85,6 +85,11 @@ def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
         settings.frame_step,
     )
     block.setCapacity(settings.capacity)
+
+    if callable(getattr(block, "setEnv", None)):
+        for env_key, env_val in os.environ.items():
+            block.setEnv(env_key, str(env_val))
+
     job.blocks.append(block)
     return job.send()
 

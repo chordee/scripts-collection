@@ -102,7 +102,7 @@ pytest tests/test_stitch_usd_clips.py
 
 | 檔案 | 覆蓋 | 環境 |
 |---|---|---|
-| `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、job/block 組裝、面板預設值、ROP 選取、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
+| `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、job/block 組裝、環境變數注入（含 setEnv graceful fallback）、面板預設值、ROP 選取、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
 | `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json`、`set_prim_transform`（直接套用、replace_existing_local 逆矩陣抵消、recook 冪等性、型別支援、動態 timecode） | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
@@ -148,7 +148,7 @@ afanasy_submitter.show()
 
 1. 按 Submit 後驗證欄位與 ROP。尚未命名的新 HIP 必須先 Save As；Frame Start 不得大於 End，Step、Frames per task 與 Capacity 必須為正數。
 2. 顯示 **Save and Submit** 對話框與目前 HIP 路徑。按 **OK** 才呼叫 `hou.hipFile.save()`；按 **Cancel** 或關閉對話框就終止，不存檔、不提交。預設按鈕為 Cancel。
-3. 儲存成功後，在 Houdini 內使用 `af` 建立一個 `af.Job` 和一個 service 為 `hbatch` 的 `af.Block`，設定 command、numeric frame range、capacity 與 priority，再呼叫 `job.send()`。
+3. 儲存成功後，在 Houdini 內使用 `af` 建立一個 `af.Job` 和一個 service 為 `hbatch` 的 `af.Block`，設定 command、numeric frame range、capacity 與 priority。同時透過 `block.setEnv()` 將當前 Houdini session 的所有環境變數（包含 `HOUDINI_PATH`、`HFS`、`PYTHONPATH`、`OCIO` 等）全數注入至該 block，確保 farm worker 上的 hython 能夠完整重現提交端的環境配置，再呼叫 `job.send()`。
 4. 顯示提交結果；驗證、存檔或送出失敗時顯示錯誤訊息。處理期間 Submit 暫時停用，結束或取消後恢復。
 
 Worker 實際執行的是 `hython -c "..."`：解碼 HIP／ROP 路徑、載入 HIP、找到 ROP，再呼叫 `render(frame_range=(task_start, task_end, frame_step))`。HIP 與 ROP 路徑以 UTF-8 URL-safe Base64 嵌入 command；兩個 `@#@` 由 Afanasy 替換成 task 起訖幀。

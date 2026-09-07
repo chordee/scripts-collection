@@ -156,6 +156,7 @@ class FakeBlock:
     def __init__(self, name, service):
         self.name = name
         self.service = service
+        self.env = {}
 
     def setCommand(self, command):
         self.command = command
@@ -165,6 +166,9 @@ class FakeBlock:
 
     def setCapacity(self, capacity):
         self.capacity = capacity
+
+    def setEnv(self, name, value):
+        self.env[name] = value
 
 
 class FakeAf:
@@ -200,6 +204,48 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertEqual(block.service, "hbatch")
         self.assertEqual(block.numeric, (1, 12, 4, 1))
         self.assertEqual(block.capacity, 800)
+
+    def test_submit_job_injects_environment_variables(self):
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        with mock.patch.dict(os.environ, {"HOUDINI_PATH": "D:/custom/path", "FOO_VAR": "BAR_VAL"}):
+            submit_job(
+                make_settings(),
+                hou_module,
+                FakeAf,
+                is_file=lambda _: True,
+            )
+        block = FakeAf.last_job.blocks[0]
+        self.assertEqual(block.env.get("HOUDINI_PATH"), "D:/custom/path")
+        self.assertEqual(block.env.get("FOO_VAR"), "BAR_VAL")
+
+    def test_submit_job_graceful_when_block_lacks_setenv(self):
+        class BlockWithoutSetEnv:
+            def __init__(self, name, service):
+                self.name = name
+                self.service = service
+
+            def setCommand(self, command):
+                self.command = command
+
+            def setNumeric(self, start, end, per_task, step):
+                self.numeric = (start, end, per_task, step)
+
+            def setCapacity(self, capacity):
+                self.capacity = capacity
+
+        class AfWithoutSetEnv(FakeAf):
+            Block = BlockWithoutSetEnv
+
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        status, _ = submit_job(
+            make_settings(),
+            hou_module,
+            AfWithoutSetEnv,
+            is_file=lambda _: True,
+        )
+        self.assertTrue(status)
 
     def test_submit_job_does_not_save_when_validation_fails(self):
         hou_module = FakeHou()
