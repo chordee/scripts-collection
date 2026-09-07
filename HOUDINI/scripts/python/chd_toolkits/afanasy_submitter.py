@@ -19,6 +19,33 @@ class SubmissionSettings:
     priority: int = 80
 
 
+ALLOWED_ENV_NAMES = frozenset(
+    {"PATH", "PYTHONPATH", "SIDEFXLABS", "HOUDINI_PATH", "HOUDINI_CGRU_PATH"}
+)
+ALLOWED_ENV_PREFIXES = ("CGRU_", "RP_", "PUB_", "JOB_", "AXIOM_", "REZ_")
+DISALLOWED_ENV_SUBSTRINGS = (
+    "KEY",
+    "TOKEN",
+    "PASSWORD",
+    "PASS",
+    "SECRET",
+    "PASSWD",
+    "PWD",
+    "CREDENTIAL",
+    "AUTH",
+)
+
+
+def is_allowed_env_var(name: str) -> bool:
+    """Return True if the environment variable is approved for farm propagation."""
+    upper_name = name.upper()
+    if any(sub in upper_name for sub in DISALLOWED_ENV_SUBSTRINGS):
+        return False
+    return name in ALLOWED_ENV_NAMES or any(
+        name.startswith(prefix) for prefix in ALLOWED_ENV_PREFIXES
+    )
+
+
 def encode_text(value):
     return base64.urlsafe_b64encode(value.encode("utf-8")).decode("ascii")
 
@@ -85,6 +112,12 @@ def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
         settings.frame_step,
     )
     block.setCapacity(settings.capacity)
+
+    if callable(getattr(block, "setEnv", None)):
+        for env_key, env_val in os.environ.items():
+            if is_allowed_env_var(env_key):
+                block.setEnv(env_key, str(env_val))
+
     job.blocks.append(block)
     return job.send()
 

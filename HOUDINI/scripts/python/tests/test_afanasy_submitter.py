@@ -18,6 +18,7 @@ from chd_toolkits.afanasy_submitter import (  # noqa: E402
     build_render_command,
     decode_text,
     encode_text,
+    is_allowed_env_var,
     session_defaults,
     show,
     submit_job,
@@ -156,6 +157,7 @@ class FakeBlock:
     def __init__(self, name, service):
         self.name = name
         self.service = service
+        self.env = {}
 
     def setCommand(self, command):
         self.command = command
@@ -165,6 +167,9 @@ class FakeBlock:
 
     def setCapacity(self, capacity):
         self.capacity = capacity
+
+    def setEnv(self, name, value):
+        self.env[name] = value
 
 
 class FakeAf:
@@ -200,6 +205,95 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertEqual(block.service, "hbatch")
         self.assertEqual(block.numeric, (1, 12, 4, 1))
         self.assertEqual(block.capacity, 800)
+
+    def test_is_allowed_env_var(self):
+        self.assertTrue(is_allowed_env_var("PATH"))
+        self.assertTrue(is_allowed_env_var("PYTHONPATH"))
+        self.assertTrue(is_allowed_env_var("SIDEFXLABS"))
+        self.assertTrue(is_allowed_env_var("HOUDINI_PATH"))
+        self.assertTrue(is_allowed_env_var("HOUDINI_CGRU_PATH"))
+        self.assertTrue(is_allowed_env_var("CGRU_LOCATION"))
+        self.assertTrue(is_allowed_env_var("RP_PROJECT"))
+        self.assertTrue(is_allowed_env_var("PUB_VERSION"))
+        self.assertTrue(is_allowed_env_var("JOB_ROOT"))
+        self.assertTrue(is_allowed_env_var("AXIOM_PATH"))
+        self.assertTrue(is_allowed_env_var("REZ_USED_REQUEST"))
+        self.assertFalse(is_allowed_env_var("PASSWORD"))
+        self.assertFalse(is_allowed_env_var("SECRET_KEY"))
+        self.assertFalse(is_allowed_env_var("FOO_VAR"))
+        self.assertFalse(is_allowed_env_var("USER"))
+        self.assertFalse(is_allowed_env_var("REZ_AUTH_TOKEN"))
+        self.assertFalse(is_allowed_env_var("JOB_PASSWORD"))
+        self.assertFalse(is_allowed_env_var("JOB_PWD"))
+        self.assertFalse(is_allowed_env_var("REZ_PASS"))
+        self.assertFalse(is_allowed_env_var("RP_SECRET_KEY"))
+        self.assertFalse(is_allowed_env_var("PUB_CREDENTIALS"))
+
+    def test_submit_job_injects_environment_variables(self):
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        test_env = {
+            "HOUDINI_PATH": "D:/custom/path",
+            "CGRU_PYTHON": "python",
+            "RP_SHOT": "sh01",
+            "PUB_ASSET": "hero",
+            "JOB_NAME": "proj_a",
+            "AXIOM_DIR": "C:/axiom",
+            "REZ_ENV": "1",
+            "REZ_AUTH_TOKEN": "secret_token",
+            "JOB_PASSWORD": "secret_pass",
+            "JOB_PWD": "secret_pwd",
+            "REZ_PASS": "secret_pass2",
+            "UNAPPROVED_SECRET": "should_not_pass",
+        }
+        with mock.patch.dict(os.environ, test_env, clear=True):
+            submit_job(
+                make_settings(),
+                hou_module,
+                FakeAf,
+                is_file=lambda _: True,
+            )
+        block = FakeAf.last_job.blocks[0]
+        self.assertEqual(block.env.get("HOUDINI_PATH"), "D:/custom/path")
+        self.assertEqual(block.env.get("CGRU_PYTHON"), "python")
+        self.assertEqual(block.env.get("RP_SHOT"), "sh01")
+        self.assertEqual(block.env.get("PUB_ASSET"), "hero")
+        self.assertEqual(block.env.get("JOB_NAME"), "proj_a")
+        self.assertEqual(block.env.get("AXIOM_DIR"), "C:/axiom")
+        self.assertEqual(block.env.get("REZ_ENV"), "1")
+        self.assertNotIn("UNAPPROVED_SECRET", block.env)
+        self.assertNotIn("REZ_AUTH_TOKEN", block.env)
+        self.assertNotIn("JOB_PASSWORD", block.env)
+        self.assertNotIn("JOB_PWD", block.env)
+        self.assertNotIn("REZ_PASS", block.env)
+
+    def test_submit_job_graceful_when_block_lacks_setenv(self):
+        class BlockWithoutSetEnv:
+            def __init__(self, name, service):
+                self.name = name
+                self.service = service
+
+            def setCommand(self, command):
+                self.command = command
+
+            def setNumeric(self, start, end, per_task, step):
+                self.numeric = (start, end, per_task, step)
+
+            def setCapacity(self, capacity):
+                self.capacity = capacity
+
+        class AfWithoutSetEnv(FakeAf):
+            Block = BlockWithoutSetEnv
+
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        status, _ = submit_job(
+            make_settings(),
+            hou_module,
+            AfWithoutSetEnv,
+            is_file=lambda _: True,
+        )
+        self.assertTrue(status)
 
     def test_submit_job_does_not_save_when_validation_fails(self):
         hou_module = FakeHou()
