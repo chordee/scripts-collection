@@ -18,6 +18,7 @@ from chd_toolkits.afanasy_submitter import (  # noqa: E402
     build_render_command,
     decode_text,
     encode_text,
+    is_allowed_env_var,
     session_defaults,
     show,
     submit_job,
@@ -205,10 +206,37 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertEqual(block.numeric, (1, 12, 4, 1))
         self.assertEqual(block.capacity, 800)
 
+    def test_is_allowed_env_var(self):
+        self.assertTrue(is_allowed_env_var("PATH"))
+        self.assertTrue(is_allowed_env_var("PYTHONPATH"))
+        self.assertTrue(is_allowed_env_var("SIDEFXLABS"))
+        self.assertTrue(is_allowed_env_var("HOUDINI_PATH"))
+        self.assertTrue(is_allowed_env_var("HOUDINI_CGRU_PATH"))
+        self.assertTrue(is_allowed_env_var("CGRU_LOCATION"))
+        self.assertTrue(is_allowed_env_var("RP_PROJECT"))
+        self.assertTrue(is_allowed_env_var("PUB_VERSION"))
+        self.assertTrue(is_allowed_env_var("JOB_ROOT"))
+        self.assertTrue(is_allowed_env_var("AXIOM_PATH"))
+        self.assertTrue(is_allowed_env_var("REZ_USED_REQUEST"))
+        self.assertFalse(is_allowed_env_var("PASSWORD"))
+        self.assertFalse(is_allowed_env_var("SECRET_KEY"))
+        self.assertFalse(is_allowed_env_var("FOO_VAR"))
+        self.assertFalse(is_allowed_env_var("USER"))
+
     def test_submit_job_injects_environment_variables(self):
         hou_module = FakeHou()
         hou_module.hipFile = FakeHipFileWithSave()
-        with mock.patch.dict(os.environ, {"HOUDINI_PATH": "D:/custom/path", "FOO_VAR": "BAR_VAL"}):
+        test_env = {
+            "HOUDINI_PATH": "D:/custom/path",
+            "CGRU_PYTHON": "python",
+            "RP_SHOT": "sh01",
+            "PUB_ASSET": "hero",
+            "JOB_NAME": "proj_a",
+            "AXIOM_DIR": "C:/axiom",
+            "REZ_ENV": "1",
+            "UNAPPROVED_SECRET": "should_not_pass",
+        }
+        with mock.patch.dict(os.environ, test_env, clear=True):
             submit_job(
                 make_settings(),
                 hou_module,
@@ -217,7 +245,13 @@ class SubmitterJobTests(unittest.TestCase):
             )
         block = FakeAf.last_job.blocks[0]
         self.assertEqual(block.env.get("HOUDINI_PATH"), "D:/custom/path")
-        self.assertEqual(block.env.get("FOO_VAR"), "BAR_VAL")
+        self.assertEqual(block.env.get("CGRU_PYTHON"), "python")
+        self.assertEqual(block.env.get("RP_SHOT"), "sh01")
+        self.assertEqual(block.env.get("PUB_ASSET"), "hero")
+        self.assertEqual(block.env.get("JOB_NAME"), "proj_a")
+        self.assertEqual(block.env.get("AXIOM_DIR"), "C:/axiom")
+        self.assertEqual(block.env.get("REZ_ENV"), "1")
+        self.assertNotIn("UNAPPROVED_SECRET", block.env)
 
     def test_submit_job_graceful_when_block_lacks_setenv(self):
         class BlockWithoutSetEnv:
