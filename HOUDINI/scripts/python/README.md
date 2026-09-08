@@ -102,7 +102,7 @@ pytest tests/test_stitch_usd_clips.py
 
 | 檔案 | 覆蓋 | 環境 |
 |---|---|---|
-| `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、job/block 組裝、環境變數篩選注入（白名單與前綴比對、敏感關鍵字排除、setEnv graceful fallback）、面板預設值、ROP 選取、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
+| `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、Windows 引號包裹與 8.3 短路徑解析、job/block 組裝、環境變數篩選注入（白名單與前綴比對、敏感關鍵字排除、setEnv graceful fallback）、面板預設值、ROP 選取（含 File Cache／Vellum I/O 經內部子節點解析、usdrender_rop 的 Save to Directory 檢查與存檔前強制 Delete Files=Always、Use Selected ROP 停用 ROP Node 欄位）、Simulation 開關（強制單一 task、停用 Frames per task 欄位）、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
 | `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json`、`set_prim_transform`（直接套用、replace_existing_local 逆矩陣抵消、recook 冪等性、型別支援、動態 timecode） | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
@@ -132,26 +132,40 @@ afanasy_submitter.show()
 
 | 欄位 | 預設 | 用途 |
 |---|---|---|
-| Job Name | 目前 HIP 檔名（不含副檔名） | Afanasy job 名稱 |
-| Hython | 目前 Houdini 的 `$HFS/bin/hython.exe`（非 Windows 為 `hython`） | Worker 執行檔路徑，可修改或 Browse |
+| Job Name | 目前 HIP 檔名（不含副檔名） | 面板顯示名稱；實際送出的 Afanasy job 名稱會是 `<Job Name> - <解析後的 ROP 完整路徑>` |
+| Hython | 目前 Houdini 的 `$HFS/bin/hython.exe`（非 Windows 為 `hython`，Windows 上會自動解析 8.3 短路徑為完整長路徑） | Worker 執行檔路徑，可修改或 Browse |
 | ROP Node | 空白 | 用 Browse 開啟 Houdini 節點選擇器 |
-| Use Selected ROP | 未勾選 | 改用按下 Submit 當下的 Houdini 選取節點，取代 ROP Node 欄位 |
+| Use Selected ROP | 未勾選 | 改用按下 Submit 當下的 Houdini 選取節點，取代 ROP Node 欄位；勾選後 ROP Node 欄位（含 Browse 按鈕）會在 UI 上停用 |
+| Simulation | 未勾選 | 勾選後整個 Frame Start–End 範圍強制只送出**一個 task**（模擬結果幀與幀之間有依賴，不能拆成多個平行 task），同時 UI 上會停用 Frames per task 欄位 |
 | Frame Start / End | 目前 playback range | 渲染起訖幀 |
 | Frame Step | `1` | 幀增量，同時傳給 Afanasy 與 ROP |
-| Frames per task | `1` | 每個 task 的幀數，交由 Afanasy numeric block 拆分 |
+| Frames per task | `1` | 每個 task 的幀數，交由 Afanasy numeric block 拆分；勾選 Simulation 時這個欄位會被停用且忽略 |
 | Capacity | `800` | `block.setCapacity()` |
 | Job Priority | `80` | `job.setPriority()` |
 
-勾選 **Use Selected ROP** 時必須恰好選取一個節點，且通過 `isinstance(node, hou.RopNode)`，可接受其子類別。未選取、多選或型別不符都會中止提交；Browse 指定的節點也使用同樣的型別檢查。
+勾選 **Use Selected ROP** 時必須恰好選取一個節點，並通過 `resolve_rop_node()` 解析：`isinstance(node, hou.RopNode)` 的節點（含子類別）直接接受；非 ROP 節點若有下列其中一個內部子節點且該子節點是 ROP，會改用該子節點提交（皆已透過 hython 對照真實節點確認）：
+
+- **File Cache**（`filecache::2.0`）：子節點 `render`，型別 `rop_geometry`
+- **Vellum I/O**（`vellumio::2.0`）：內部包了一個 File Cache，所以巢狀多一層，子節點是 `filecache/render`
+
+未選取、多選、或都不符合上述任何一種都會中止提交。
+
+Browse 按鈕的節點選擇器仍然只列出 ROP context 節點（`node_type_filter=hou.nodeTypeFilter.Rop`），**不會**列出 File Cache／Vellum I/O 這類節點；要用它們提交，請在 Network Editor 裡選取該節點後改用 **Use Selected ROP**。
+
+`usd_rop`／`usdrender_rop`（Solaris LOP context 的輸出節點）本身就是 `hou.RopNode` 的實例（已透過 hython 對照真實節點確認），不需要透過上述的內部子節點解析，直接走一般 ROP 那條路。
+
+`usdrender_rop` 另外多一項檢查：只要它的「Save to Directory」output processor（`enableoutputprocessor_savetodirectory`）是開啟的，`savetodirectory_directory` 就不能維持預設值（`$HOUDINI_TEMP_DIR/usd_renders/$RENDERID`，每台機器的本機暫存目錄，farm 上其他機器找不到），而且必須設定在 `$HIP` 底下（以 `$HIP` 開頭）。不符合會中止提交並顯示錯誤訊息。若該 output processor 被關閉，則不檢查這個參數。
+
+`usdrender_rop` 還會在**存檔前**自動把 `deletefiles`（Delete Files，字串型 menu parm，選項為 `intempdir`／`always`／`never`）設成 `always`（Always Delete，menu index 1，已透過 hython 對照真實節點確認）。這個設定一定要在 `hou.hipFile.save()` 之前完成，因為 farm worker 是從存檔後的場景檔渲染，不是即時記憶體中的節點狀態。
 
 #### 提交流程
 
 1. 按 Submit 後驗證欄位與 ROP。尚未命名的新 HIP 必須先 Save As；Frame Start 不得大於 End，Step、Frames per task 與 Capacity 必須為正數。
 2. 顯示 **Save and Submit** 對話框與目前 HIP 路徑。按 **OK** 才呼叫 `hou.hipFile.save()`；按 **Cancel** 或關閉對話框就終止，不存檔、不提交。預設按鈕為 Cancel。
-3. 儲存成功後，在 Houdini 內使用 `af` 建立一個 `af.Job` 和一個 service 為 `hbatch` 的 `af.Block`，設定 command、numeric frame range、capacity 與 priority。若該 block 提供且支援呼叫 `setEnv`，則將當前 session 中經過篩選的環境變數注入（包含精確名稱 `PATH`、`PYTHONPATH`、`SIDEFXLABS`、`HOUDINI_PATH`、`HOUDINI_CGRU_PATH`，以及符合前綴 `CGRU_*`、`RP_*`、`PUB_*`、`JOB_*`、`AXIOM_*`、`REZ_*` 的變數；即使符合前綴，任何含有 `KEY`、`TOKEN`、`PASSWORD`、`PASS`、`SECRET`、`PASSWD`、`PWD`、`CREDENTIAL`、`AUTH` 等敏感字眼的變數皆會嚴格排除）；若 block 不具備 `setEnv` 則略過注入並保持流程正常運作，最後呼叫 `job.send()`。
+3. 儲存成功後，在 Houdini 內使用 `af` 建立一個 `af.Job`（名稱為 `<Job Name> - <解析後的 ROP 完整路徑>`，不是面板上單純輸入的 Job Name）和一個 service 為 `hbatch` 的 `af.Block`，設定 command、numeric frame range、capacity 與 priority。若該 block 提供且支援呼叫 `setEnv`，則將當前 session 中經過篩選的環境變數注入（包含精確名稱 `PATH`、`PYTHONPATH`、`SIDEFXLABS`、`HOUDINI_PATH`、`HOUDINI_CGRU_PATH`，以及符合前綴 `CGRU_*`、`RP_*`、`PUB_*`、`JOB_*`、`AXIOM_*`、`REZ_*` 的變數；即使符合前綴，任何含有 `KEY`、`TOKEN`、`PASSWORD`、`PASS`、`SECRET`、`PASSWD`、`PWD`、`CREDENTIAL`、`AUTH` 等敏感字眼的變數皆會嚴格排除）；若 block 不具備 `setEnv` 則略過注入並保持流程正常運作，最後呼叫 `job.send()`。
 4. 顯示提交結果；驗證、存檔或送出失敗時顯示錯誤訊息。處理期間 Submit 暫時停用，結束或取消後恢復。
 
-Worker 實際執行的是 `hython -c "..."`：解碼 HIP／ROP 路徑、載入 HIP、找到 ROP，再呼叫 `render(frame_range=(task_start, task_end, frame_step))`。HIP 與 ROP 路徑以 UTF-8 URL-safe Base64 嵌入 command；兩個 `@#@` 由 Afanasy 替換成 task 起訖幀。
+Worker 實際執行的是 `hython -c "..."`：解碼 HIP／ROP 路徑、載入 HIP、找到 ROP，再呼叫 `render(frame_range=(task_start, task_end, frame_step))`。HIP 與 ROP 路徑以 UTF-8 URL-safe Base64 嵌入 command；兩個 `@#@` 由 Afanasy 替換成 task 起訖幀。在 Windows 環境下，為防範 Afanasy 的 `cmd.exe /c` 執行器因引號剝除（quote stripping）機制將含空白的執行檔路徑截斷，指令外層會自動包裹雙引號保護（例如 `""C:\Program Files\...\hython.exe" -c "..." ""`）。
 
 Worker 不需要安裝 `chd_toolkits`，也不需要共用臨時 Python 腳本；但必須能存取指定的 hython、HIP、場景資產及輸出路徑，並具備所需授權。工具沒有自動路徑映射，也不建立 HIP 快照，後續再儲存同一份 HIP 會影響尚未載入它的 tasks。
 

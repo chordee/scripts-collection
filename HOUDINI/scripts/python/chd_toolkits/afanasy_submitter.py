@@ -2,6 +2,7 @@
 
 import base64
 import os
+from pathlib import Path
 import subprocess
 from dataclasses import dataclass
 
@@ -17,6 +18,7 @@ class SubmissionSettings:
     frames_per_task: int = 1
     capacity: int = 800
     priority: int = 80
+    is_simulation: bool = False
 
 
 ALLOWED_ENV_NAMES = frozenset(
@@ -54,6 +56,88 @@ def decode_text(value):
     return base64.urlsafe_b64decode(value.encode("ascii")).decode("utf-8")
 
 
+_INTERNAL_ROP_RELATIVE_PATHS = ("render", "filecache/render")
+
+
+def resolve_rop_node(node, hou_module):
+    """Resolve ``node`` to an actual ``hou.RopNode``.
+
+    A ROP node is returned as-is. Some non-ROP nodes do their actual
+    writing-to-disk work through an internal child node, confirmed via
+    hython against real nodes:
+
+    - File Cache (``filecache::2.0``) has a child ``render`` of type
+      ``rop_geometry``.
+    - Vellum I/O (``vellumio::2.0``) embeds a File Cache internally, so its
+      equivalent child is nested one level deeper at ``filecache/render``.
+
+    Both are ``isinstance(child, hou.RopNode)``. If any of the known
+    relative paths resolves to a ROP, that is used. Anything else raises.
+    """
+    if isinstance(node, hou_module.RopNode):
+        return node
+    get_child_fn = getattr(node, "node", None)
+    if callable(get_child_fn):
+        for relative_path in _INTERNAL_ROP_RELATIVE_PATHS:
+            resolved = get_child_fn(relative_path)
+            if isinstance(resolved, hou_module.RopNode):
+                return resolved
+    raise ValueError(
+        "Select a valid ROP node (hou.RopNode), or a node with an internal "
+        "'render' ROP node (e.g. File Cache or Vellum I/O)."
+    )
+
+
+USDRENDER_ROP_DEFAULT_SAVE_DIRECTORY = "$HOUDINI_TEMP_DIR/usd_renders/$RENDERID"
+
+
+def validate_usdrender_rop_settings(rop):
+    """usdrender_rop's "Save to Directory" output must be configured under
+    $HIP, not left at Houdini's per-machine temp-directory default --
+    confirmed via hython that a fresh usdrender_rop's savetodirectory_directory
+    parm defaults to $HOUDINI_TEMP_DIR/usd_renders/$RENDERID, which a farm
+    worker on a different machine has no way to find afterward. Only
+    enforced while the "Save to Directory" output processor
+    (enableoutputprocessor_savetodirectory) is actually enabled -- if it's
+    off, this parm doesn't affect where output lands.
+    """
+    if rop.type().name() != "usdrender_rop":
+        return
+    enabled_parm = rop.parm("enableoutputprocessor_savetodirectory")
+    if enabled_parm is not None and not enabled_parm.eval():
+        return
+    directory_parm = rop.parm("savetodirectory_directory")
+    if directory_parm is None:
+        return
+    directory = directory_parm.unexpandedString()
+    if directory == USDRENDER_ROP_DEFAULT_SAVE_DIRECTORY:
+        raise ValueError(
+            "usdrender_rop 'Save to Directory' is still at its default "
+            f"({USDRENDER_ROP_DEFAULT_SAVE_DIRECTORY}); set it under $HIP."
+        )
+    if not directory.startswith("$HIP"):
+        raise ValueError(
+            f"usdrender_rop 'Save to Directory' must be set under $HIP, got: {directory!r}"
+        )
+
+
+def configure_usdrender_rop_settings(rop):
+    """Force usdrender_rop's "Delete Files" to "Always Delete".
+
+    ``deletefiles`` is a string-menu parm, confirmed via hython to have
+    tokens ``('intempdir', 'always', 'never')`` -- menu index 1 is
+    ``'always'`` ("Always Delete"). Must run before the HIP is saved: the
+    farm worker renders from the saved file, not the live in-memory node.
+    """
+    if rop.type().name() != "usdrender_rop":
+        return
+    deletefiles_parm = rop.parm("deletefiles")
+    if deletefiles_parm is None:
+        return
+    always_delete_token = deletefiles_parm.parmTemplate().menuItems()[1]
+    deletefiles_parm.set(always_delete_token)
+
+
 def validate_settings(settings, hou_module, is_file=os.path.isfile):
     if not settings.job_name.strip():
         raise ValueError("Job Name is required.")
@@ -73,14 +157,14 @@ def validate_settings(settings, hou_module, is_file=os.path.isfile):
         raise ValueError("Job Priority must not be negative.")
 
     node = hou_module.node(settings.rop_path)
-    if not isinstance(node, hou_module.RopNode):
-        raise ValueError("Select a valid ROP node (hou.RopNode).")
-    return node
+    rop = resolve_rop_node(node, hou_module)
+    validate_usdrender_rop_settings(rop)
+    return rop
 
 
-def build_render_command(settings, hip_path):
+def build_render_command(settings, hip_path, rop_path=None, platform_name=os.name):
     hip = encode_text(hip_path)
-    rop = encode_text(settings.rop_path)
+    rop = encode_text(rop_path if rop_path is not None else settings.rop_path)
     code = (
         "import base64,hou;"
         "decode=lambda value:base64.urlsafe_b64decode(value).decode('utf-8');"
@@ -91,24 +175,38 @@ def build_render_command(settings, hip_path):
         "assert callable(getattr(node,'render',None)),'Node has no render(): '+rop;"
         f"node.render(frame_range=(@#@,@#@,{settings.frame_step}))"
     )
-    executable = subprocess.list2cmdline([settings.hython_path])
-    return f'{executable} -c "{code}"'
+    hython_path = os.path.normpath(settings.hython_path)
+    executable = subprocess.list2cmdline([hython_path])
+    command = f'{executable} -c "{code}"'
+    if platform_name == "nt":
+        return f'"{command}"'
+    return command
 
 
 def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
     rop = validate_settings(settings, hou_module, is_file=is_file)
+    configure_usdrender_rop_settings(rop)
     hou_module.hipFile.save()
     hip_path = hou_module.hipFile.path()
 
-    job = af_module.Job(settings.job_name.strip())
+    job = af_module.Job(f"{settings.job_name.strip()} - {rop.path()}")
     job.setPriority(settings.priority)
 
+    # Simulation jobs must run as a single task covering the whole frame
+    # range -- a sim can't be split into independent per-frame-range tasks
+    # since later frames depend on earlier ones having already run. Passing
+    # the full range span as "frames per task" guarantees exactly one task
+    # regardless of frame_step.
+    frames_per_task = settings.frames_per_task
+    if settings.is_simulation:
+        frames_per_task = settings.frame_end - settings.frame_start + 1
+
     block = af_module.Block(rop.name(), "hbatch")
-    block.setCommand(build_render_command(settings, hip_path))
+    block.setCommand(build_render_command(settings, hip_path, rop_path=rop.path()))
     block.setNumeric(
         settings.frame_start,
         settings.frame_end,
-        settings.frames_per_task,
+        frames_per_task,
         settings.frame_step,
     )
     block.setCapacity(settings.capacity)
@@ -126,11 +224,22 @@ def session_defaults(hou_module, platform_name=os.name):
     hip_path = hou_module.hipFile.path()
     frame_start, frame_end = hou_module.playbar.playbackRange()
     executable = "hython.exe" if platform_name == "nt" else "hython"
+    hfs = hou_module.getenv("HFS") or ""
+    if hfs and platform_name == "nt" and os.name == "nt":
+        # Path.resolve() resolves against the actual running OS, not
+        # platform_name -- on a non-Windows test runner simulating "nt" via
+        # platform_name, it would treat "C:/Program Files/..." as a POSIX
+        # relative path and prepend the current working directory.
+        try:
+            hfs = str(Path(hfs).resolve())
+        except Exception:
+            hfs = os.path.normpath(hfs)
+    elif hfs:
+        hfs = os.path.normpath(hfs)
+
     return {
         "job_name": os.path.splitext(os.path.basename(hip_path))[0],
-        "hython_path": os.path.join(
-            hou_module.getenv("HFS") or "", "bin", executable
-        ),
+        "hython_path": os.path.join(hfs, "bin", executable),
         "frame_start": int(frame_start),
         "frame_end": int(frame_end),
         "frame_step": 1,
@@ -174,6 +283,7 @@ def _create_dialog_class(QtWidgets, hou_module, QtCore=None):
             self.rop_edit = QtWidgets.QLineEdit()
             self.rop_edit.setReadOnly(True)
             self.use_selected_rop = QtWidgets.QCheckBox("Use Selected ROP")
+            self.simulation_checkbox = QtWidgets.QCheckBox("Simulation")
 
             self.frame_start_spin = self._spin(
                 -1_000_000, 1_000_000, defaults["frame_start"]
@@ -195,17 +305,20 @@ def _create_dialog_class(QtWidgets, hou_module, QtCore=None):
             )
 
             hython_button = QtWidgets.QPushButton("Browse")
-            rop_button = QtWidgets.QPushButton("Browse")
+            self.rop_button = QtWidgets.QPushButton("Browse")
             self.submit_button = QtWidgets.QPushButton("Submit")
             hython_button.clicked.connect(self._browse_hython)
-            rop_button.clicked.connect(self._browse_rop)
+            self.rop_button.clicked.connect(self._browse_rop)
             self.submit_button.clicked.connect(self._on_submit)
+            self.simulation_checkbox.toggled.connect(self._on_simulation_toggled)
+            self.use_selected_rop.toggled.connect(self._on_use_selected_rop_toggled)
 
             form = QtWidgets.QFormLayout(self)
             form.addRow("Job Name", self.job_name_edit)
             form.addRow("Hython", self._path_row(self.hython_edit, hython_button))
-            form.addRow("ROP Node", self._path_row(self.rop_edit, rop_button))
+            form.addRow("ROP Node", self._path_row(self.rop_edit, self.rop_button))
             form.addRow(self.use_selected_rop)
+            form.addRow(self.simulation_checkbox)
             form.addRow("Frame Start", self.frame_start_spin)
             form.addRow("Frame End", self.frame_end_spin)
             form.addRow("Frame Step", self.frame_step_spin)
@@ -245,15 +358,20 @@ def _create_dialog_class(QtWidgets, hou_module, QtCore=None):
             if path:
                 self.rop_edit.setText(path)
 
+        def _on_simulation_toggled(self, checked):
+            self.frames_per_task_spin.setEnabled(not checked)
+
+        def _on_use_selected_rop_toggled(self, checked):
+            self.rop_edit.setEnabled(not checked)
+            self.rop_button.setEnabled(not checked)
+
         def _settings_from_fields(self):
             rop_path = self.rop_edit.text()
             if self.use_selected_rop.isChecked():
                 selected = hou_module.selectedNodes()
                 if len(selected) != 1:
-                    raise ValueError("Select exactly one ROP node in Houdini.")
-                if not isinstance(selected[0], hou_module.RopNode):
-                    raise ValueError("The selected node must inherit from hou.RopNode.")
-                rop_path = selected[0].path()
+                    raise ValueError("Select exactly one node in Houdini.")
+                rop_path = resolve_rop_node(selected[0], hou_module).path()
             return SubmissionSettings(
                 job_name=self.job_name_edit.text(),
                 hython_path=self.hython_edit.text(),
@@ -264,6 +382,7 @@ def _create_dialog_class(QtWidgets, hou_module, QtCore=None):
                 frames_per_task=self.frames_per_task_spin.value(),
                 capacity=self.capacity_spin.value(),
                 priority=self.priority_spin.value(),
+                is_simulation=self.simulation_checkbox.isChecked(),
             )
 
         def _on_submit(self):
