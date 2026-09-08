@@ -133,7 +133,7 @@ afanasy_submitter.show()
 | 欄位 | 預設 | 用途 |
 |---|---|---|
 | Job Name | 目前 HIP 檔名（不含副檔名） | Afanasy job 名稱 |
-| Hython | 目前 Houdini 的 `$HFS/bin/hython.exe`（非 Windows 為 `hython`） | Worker 執行檔路徑，可修改或 Browse |
+| Hython | 目前 Houdini 的 `$HFS/bin/hython.exe`（非 Windows 為 `hython`，Windows 上會自動解析 8.3 短路徑為完整長路徑） | Worker 執行檔路徑，可修改或 Browse |
 | ROP Node | 空白 | 用 Browse 開啟 Houdini 節點選擇器 |
 | Use Selected ROP | 未勾選 | 改用按下 Submit 當下的 Houdini 選取節點，取代 ROP Node 欄位 |
 | Frame Start / End | 目前 playback range | 渲染起訖幀 |
@@ -151,7 +151,7 @@ afanasy_submitter.show()
 3. 儲存成功後，在 Houdini 內使用 `af` 建立一個 `af.Job` 和一個 service 為 `hbatch` 的 `af.Block`，設定 command、numeric frame range、capacity 與 priority。若該 block 提供且支援呼叫 `setEnv`，則將當前 session 中經過篩選的環境變數注入（包含精確名稱 `PATH`、`PYTHONPATH`、`SIDEFXLABS`、`HOUDINI_PATH`、`HOUDINI_CGRU_PATH`，以及符合前綴 `CGRU_*`、`RP_*`、`PUB_*`、`JOB_*`、`AXIOM_*`、`REZ_*` 的變數；即使符合前綴，任何含有 `KEY`、`TOKEN`、`PASSWORD`、`PASS`、`SECRET`、`PASSWD`、`PWD`、`CREDENTIAL`、`AUTH` 等敏感字眼的變數皆會嚴格排除）；若 block 不具備 `setEnv` 則略過注入並保持流程正常運作，最後呼叫 `job.send()`。
 4. 顯示提交結果；驗證、存檔或送出失敗時顯示錯誤訊息。處理期間 Submit 暫時停用，結束或取消後恢復。
 
-Worker 實際執行的是 `hython -c "..."`：解碼 HIP／ROP 路徑、載入 HIP、找到 ROP，再呼叫 `render(frame_range=(task_start, task_end, frame_step))`。HIP 與 ROP 路徑以 UTF-8 URL-safe Base64 嵌入 command；兩個 `@#@` 由 Afanasy 替換成 task 起訖幀。
+Worker 實際執行的是 `hython -c "..."`：解碼 HIP／ROP 路徑、載入 HIP、找到 ROP，再呼叫 `render(frame_range=(task_start, task_end, frame_step))`。HIP 與 ROP 路徑以 UTF-8 URL-safe Base64 嵌入 command；兩個 `@#@` 由 Afanasy 替換成 task 起訖幀。在 Windows 環境下，為防範 Afanasy 的 `cmd.exe /c` 執行器因引號剝除（quote stripping）機制將含空白的執行檔路徑截斷，指令外層會自動包裹雙引號保護（例如 `""C:\Program Files\...\hython.exe" -c "..." ""`）。
 
 Worker 不需要安裝 `chd_toolkits`，也不需要共用臨時 Python 腳本；但必須能存取指定的 hython、HIP、場景資產及輸出路徑，並具備所需授權。工具沒有自動路徑映射，也不建立 HIP 快照，後續再儲存同一份 HIP 會影響尚未載入它的 tasks。
 

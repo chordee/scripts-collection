@@ -122,10 +122,10 @@ class SubmitterPureTests(unittest.TestCase):
 
     def test_command_is_self_contained_and_has_two_frame_tokens(self):
         settings = make_settings(frame_step=3)
-        command = build_render_command(settings, "D:/show/場景 test.hip")
+        command = build_render_command(settings, "D:/show/場景 test.hip", platform_name="posix")
         self.assertTrue(
             command.startswith(
-                '"C:/Program Files/SideFX/Houdini/bin/hython.exe" -c '
+                f'"{os.path.normpath("C:/Program Files/SideFX/Houdini/bin/hython.exe")}" -c '
             )
         )
         self.assertEqual(command.count("@#@"), 2)
@@ -137,6 +137,29 @@ class SubmitterPureTests(unittest.TestCase):
 
         inline_code = command.split(' -c "', 1)[1][:-1]
         compile(inline_code.replace("@#@", "1"), "<afanasy-command>", "exec")
+
+    def test_build_render_command_windows_quoting(self):
+        settings = make_settings(
+            hython_path=r"C:\Program Files\Side Effects Software\Houdini 20.5.278\bin\hython.exe",
+            frame_step=1,
+        )
+        command_win = build_render_command(settings, "D:/show/test.hip", platform_name="nt")
+        self.assertTrue(command_win.startswith('""'))
+        self.assertTrue(command_win.endswith('""'))
+        inner_cmd = command_win[1:-1]
+        self.assertTrue(
+            inner_cmd.startswith(
+                r'"C:\Program Files\Side Effects Software\Houdini 20.5.278\bin\hython.exe" -c "'
+            )
+        )
+
+        command_posix = build_render_command(settings, "D:/show/test.hip", platform_name="posix")
+        self.assertFalse(command_posix.startswith('""'))
+        self.assertTrue(
+            command_posix.startswith(
+                r'"C:\Program Files\Side Effects Software\Houdini 20.5.278\bin\hython.exe" -c "'
+            )
+        )
 
 
 class FakeJob:
@@ -330,14 +353,34 @@ class SubmitterDefaultsTests(unittest.TestCase):
         self.assertEqual(defaults["job_name"], "shot010")
         self.assertEqual(
             defaults["hython_path"],
-            os.path.join(
-                "C:/Program Files/SideFX/Houdini", "bin", "hython.exe"
+            os.path.normpath(
+                os.path.join(
+                    "C:/Program Files/SideFX/Houdini", "bin", "hython.exe"
+                )
             ),
         )
         self.assertEqual(defaults["frame_start"], 1001)
         self.assertEqual(defaults["frame_end"], 1100)
         self.assertEqual(defaults["priority"], 80)
         self.assertEqual(defaults["capacity"], 800)
+
+    def test_session_defaults_resolves_8_3_short_path(self):
+        hou_module = FakeHou(path="D:/show/shot010.hip")
+        hou_module.playbar = type(
+            "Playbar",
+            (),
+            {"playbackRange": staticmethod(lambda: (1001.0, 1100.0))},
+        )()
+        # Test on Windows: C:\PROGRA~1 resolves to C:\Program Files if present
+        if os.name == "nt" and os.path.exists("C:/PROGRA~1"):
+            hou_module.getenv = lambda name: "C:/PROGRA~1/SideFX/Houdini"
+            defaults = session_defaults(hou_module, platform_name="nt")
+            self.assertTrue(defaults["hython_path"].startswith("C:\\Program Files"))
+            self.assertNotIn("~", defaults["hython_path"])
+        else:
+            hou_module.getenv = lambda name: "/opt/hfs"
+            defaults = session_defaults(hou_module, platform_name="posix")
+            self.assertEqual(defaults["hython_path"], "/opt/hfs/bin/hython")
 
 
 class FakeSignal:

@@ -2,6 +2,7 @@
 
 import base64
 import os
+from pathlib import Path
 import subprocess
 from dataclasses import dataclass
 
@@ -78,7 +79,7 @@ def validate_settings(settings, hou_module, is_file=os.path.isfile):
     return node
 
 
-def build_render_command(settings, hip_path):
+def build_render_command(settings, hip_path, platform_name=os.name):
     hip = encode_text(hip_path)
     rop = encode_text(settings.rop_path)
     code = (
@@ -91,8 +92,12 @@ def build_render_command(settings, hip_path):
         "assert callable(getattr(node,'render',None)),'Node has no render(): '+rop;"
         f"node.render(frame_range=(@#@,@#@,{settings.frame_step}))"
     )
-    executable = subprocess.list2cmdline([settings.hython_path])
-    return f'{executable} -c "{code}"'
+    hython_path = os.path.normpath(settings.hython_path)
+    executable = subprocess.list2cmdline([hython_path])
+    command = f'{executable} -c "{code}"'
+    if platform_name == "nt":
+        return f'"{command}"'
+    return command
 
 
 def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
@@ -126,11 +131,18 @@ def session_defaults(hou_module, platform_name=os.name):
     hip_path = hou_module.hipFile.path()
     frame_start, frame_end = hou_module.playbar.playbackRange()
     executable = "hython.exe" if platform_name == "nt" else "hython"
+    hfs = hou_module.getenv("HFS") or ""
+    if hfs and platform_name == "nt":
+        try:
+            hfs = str(Path(hfs).resolve())
+        except Exception:
+            hfs = os.path.normpath(hfs)
+    elif hfs:
+        hfs = os.path.normpath(hfs)
+
     return {
         "job_name": os.path.splitext(os.path.basename(hip_path))[0],
-        "hython_path": os.path.join(
-            hou_module.getenv("HFS") or "", "bin", executable
-        ),
+        "hython_path": os.path.join(hfs, "bin", executable),
         "frame_start": int(frame_start),
         "frame_end": int(frame_end),
         "frame_step": 1,
