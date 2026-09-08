@@ -225,7 +225,11 @@ def session_defaults(hou_module, platform_name=os.name):
     frame_start, frame_end = hou_module.playbar.playbackRange()
     executable = "hython.exe" if platform_name == "nt" else "hython"
     hfs = hou_module.getenv("HFS") or ""
-    if hfs and platform_name == "nt":
+    if hfs and platform_name == "nt" and os.name == "nt":
+        # Path.resolve() resolves against the actual running OS, not
+        # platform_name -- on a non-Windows test runner simulating "nt" via
+        # platform_name, it would treat "C:/Program Files/..." as a POSIX
+        # relative path and prepend the current working directory.
         try:
             hfs = str(Path(hfs).resolve())
         except Exception:
