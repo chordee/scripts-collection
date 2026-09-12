@@ -9,6 +9,7 @@
 - Nerfstudio `transforms.json` → Houdini 動畫相機
 - USD Value Clips stitcher（純 Python 函式介面，無 CLI）
 - Afanasy job submission（Houdini 內的 PySide6 面板）
+- USD layer inspector（盤點 stage 用到的所有 layer 與其 Houdini 存檔設定）
 
 安裝設定請參考 [`HOUDINI/README.md`](../../README.md)。安裝完成後在 Houdini 的 Python shell / Python SOP / HDA event handler 即可：
 
@@ -21,6 +22,7 @@ ct.point_attrib_to_numpy(geo, "P")
 from chd_toolkits.colmap_points import read_points3d_binary_to_geo
 from chd_toolkits.nerfstudio_cam import create_animated_camera
 from chd_toolkits.stitch_usd_clips import stitch_clips
+from chd_toolkits.layer_inspector import LayerInspector
 ```
 
 ## 套件結構
@@ -34,12 +36,14 @@ HOUDINI/scripts/python/
 │   ├── colmap_points.py       COLMAP .bin → Houdini geometry
 │   ├── nerfstudio_cam.py      Nerfstudio transforms.json → Houdini 動畫相機
 │   ├── afanasy_submitter.py   PySide6 面板 → Afanasy job submission
+│   ├── layer_inspector.py     stage layer 盤點 + Houdini 存檔設定
 │   └── stitch_usd_clips.py    USD Value Clips stitcher（純 Python 函式介面）
 └── tests/
     ├── conftest.py            sys.path 補上 chd_toolkits 上層
     ├── run_hython.py          $HFS/bin/hython -m pytest tests/ 的 wrapper
     ├── test_afanasy_submitter.py   command / submission / 面板流程（mock）
     ├── test_stitch_usd_clips.py    pxr-only；hython 或 plain Python 皆可
+    ├── test_layer_inspector.py     pxr-only；hython 或 plain Python 皆可
     ├── test_core_usd.py            core 的 USD 函式；hython only
     └── test_core_numpy.py          core 的 numpy 函式；hython only
 ```
@@ -50,7 +54,7 @@ HOUDINI/scripts/python/
 
 - `hou`（Houdini 內建）— core / colmap_points / nerfstudio_cam 需要
 - `numpy` — core / colmap_points 需要
-- `pxr.Usd` / `pxr.UsdGeom` / `pxr.UsdShade` / `pxr.Sdf` / `pxr.Gf` — core / stitch_usd_clips 需要（Houdini 或 `pip install usd-core`）
+- `pxr.Usd` / `pxr.UsdGeom` / `pxr.UsdShade` / `pxr.Sdf` / `pxr.Gf` — core / stitch_usd_clips / layer_inspector 需要（Houdini 或 `pip install usd-core`）
 - `scipy`（**可選**；若存在則自動暴露 `chd_toolkits.scipy_convolve2d`）
 - `hou`、`PySide6` — afanasy_submitter 面板需要 Houdini 圖形介面環境
 - `af`（CGRU/Afanasy）— 提交時需要能在 Houdini 內 `import af`，並已配置 Afanasy server 連線
@@ -104,6 +108,7 @@ pytest tests/test_stitch_usd_clips.py
 |---|---|---|
 | `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、Windows 引號包裹與 8.3 短路徑解析、job/block 組裝、環境變數篩選注入（白名單與前綴比對、敏感關鍵字排除、setEnv graceful fallback）、面板預設值、ROP 選取（含 File Cache／Vellum I/O 經內部子節點解析、usdrender_rop 的 Save to Directory 檢查與存檔前強制 Delete Files=Always、Use Selected ROP 停用 ROP Node 欄位）、Simulation 開關（強制單一 task、停用 Frames per task 欄位）、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
+| `test_layer_inspector.py` | layer 列舉（含 sublayer / session layer）、`HoudiniSavePath` / `HoudiniSaveControl` 讀取（customLayerData 與 `/HoudiniLayerInfo` prim 兩種來源）、各 save control token 的 `willWriteFile` 判定、`unresolved_sublayers`、`full_report` summary、`to_json` / `layers_to_json`、`Sdf.AssetPath` 的 JSON 轉換 | hython / plain Python |
 | `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json`、`set_prim_transform`（直接套用、replace_existing_local 逆矩陣抵消、recook 冪等性、型別支援、動態 timecode） | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
 | `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
@@ -566,6 +571,73 @@ stitch_clips(
 - `find_all_animated_prims(probe_frame_path, root_primpath)` — 走訪 probe frame 找出有 timesample 的 prim
 - `generate_topology(probe_frame_path, clip_primpath, topology_path)` — 產生 topology layer
 - `generate_manifest(probe_frame_path, clip_primpath, manifest_path)` — 產生 manifest layer
+
+### `layer_inspector` — USD layer 盤點
+
+盤點一個 `Usd.Stage` 用到的所有 layer，並讀出每個 layer 的 Houdini 存檔設定，用來確認「這次存檔到底會寫出哪些檔案、是被哪些 LOP 節點編輯的」。
+
+#### `LayerInspector`
+
+```python
+LayerInspector(
+    stage: Usd.Stage,
+    include_refs: bool = True,
+    resolve_nodes: bool = True,
+)
+```
+
+| 參數 | 預設 | 用途 |
+|---|---|---|
+| `stage` | (必填) | 要盤點的 `Usd.Stage`（例如 `lop_node.stage()`） |
+| `include_refs` | `True` | 除了 layer stack，也納入 reference / payload / clip 帶進來的 layer |
+| `resolve_nodes` | `True` | 把 `HoudiniEditorNodes` 的 session id 還原成節點路徑（需要 `hou`） |
+
+主要方法：
+
+- `layers()` — 回傳所有 `Sdf.Layer`（含 session layer）
+- `describe(layer, index=-1)` — 單一 layer 的完整描述 dict
+- `report()` — 所有 layer 的描述 list
+- `unresolved_sublayers()` — 宣告了但解不開的 sublayer（通常是檔案不存在）
+- `full_report()` — `report()` + `unresolvedSublayers` + `summary`
+- `to_json(indent=2)` — `full_report()` 的 JSON 字串
+
+`describe()` 的欄位：
+
+| 欄位 | 說明 |
+|---|---|
+| `identifier` / `displayName` / `realPath` | layer 識別資訊；匿名 layer 的 `realPath` 為空字串 |
+| `implicit` | 是否為匿名（記憶體內、尚未對應檔案）layer |
+| `savePath` / `saveControl` | `/HoudiniLayerInfo` 上的 `HoudiniSavePath` / `HoudiniSaveControl` |
+| `willWriteFile` | 有 `savePath` 且 `saveControl` 屬於會寫檔的 token |
+| `isRootLayer` / `isSessionLayer` / `dirty` / `muted` | layer 在 stage 中的角色與狀態 |
+| `editorNodes` / `staleEditorNodeIds` | 編輯過此 layer 的 LOP 節點路徑；查不到的 session id 另外列出 |
+| `customLayerData` | 全部 custom data，已轉成 JSON-safe 型別 |
+
+`HoudiniSaveControl` 的 token（對照 Houdini 自身的 Scene Graph Layers 面板實作）：
+
+| token | 會寫檔 | 面板顯示 |
+|---|---|---|
+| `Explicit` | 是 | 寫到 `HoudiniSavePath` |
+| `IsFileFromDisk` | 是 | Replace File（覆寫來源檔） |
+| `Placeholder` | 否 | Ignore |
+| `DoNotSave` | 否 | Do Not Save |
+| （沒有這個 key） | 否 | Implicit（併入 parent layer 一起存） |
+
+#### 使用範例
+
+```python
+from chd_toolkits.layer_inspector import LayerInspector
+
+inspector = LayerInspector(hou.node("/stage/configurelayer1").stage())
+report = inspector.full_report()
+
+print(report["summary"]["pendingWrites"])   # 這次存檔會寫出的路徑
+print(inspector.to_json())
+```
+
+模組層另有 `layers_to_json(stage, indent=2, **kwargs)`，等同 `LayerInspector(stage, **kwargs).to_json(indent)`。
+
+`hou` 只在還原 `HoudiniEditorNodes` 時需要；`resolve_nodes=False`（或不在 Houdini 內）時只需 `pxr`。
 
 ## 設計筆記
 
