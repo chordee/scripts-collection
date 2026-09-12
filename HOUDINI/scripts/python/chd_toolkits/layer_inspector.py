@@ -66,6 +66,16 @@ class LayerInspector:
     # ---------- collect ----------
 
     def layers(self) -> list:
+        """Layers the stage currently consumes, not every layer it could reach.
+
+        With ``include_refs`` the local stack is extended by
+        ``GetUsedLayers()``, which reports what composition actually traversed.
+        A payload that is declared but not loaded (a stage opened with
+        ``Usd.Stage.LoadNone``, or an unloaded prim) therefore does not appear —
+        it contributes no opinions and Houdini writes nothing for it. Value
+        clips do appear without sampling an attribute first, confirmed against
+        Houdini's USD build.
+        """
         stack = list(
             self.stage.GetLayerStack(
                 includeSessionLayers=self.include_session_layers

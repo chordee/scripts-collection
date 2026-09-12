@@ -6,6 +6,7 @@ never required.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -64,6 +65,60 @@ def test_report_excludes_session_layer_when_asked(tmp_path):
     stage, _, _ = _stage_with_sublayer(tmp_path)
     report = LayerInspector(stage, include_session_layers=False).report()
     assert not any(d["isSessionLayer"] for d in report)
+
+
+def _stage_with_payload(tmp_path, load_policy):
+    asset_path = tmp_path / "asset.usda"
+    asset_layer = Sdf.Layer.CreateNew(str(asset_path))
+    Usd.Stage.Open(asset_layer).DefinePrim("/Asset", "Xform")
+    asset_layer.Save()
+
+    root_path = tmp_path / "root.usda"
+    root_layer = Sdf.Layer.CreateNew(str(root_path))
+    root_stage = Usd.Stage.Open(root_layer)
+    prim = root_stage.DefinePrim("/World", "Xform")
+    prim.GetPayloads().AddPayload(str(asset_path), "/Asset")
+    root_layer.Save()
+
+    return Usd.Stage.Open(str(root_path), load_policy), asset_layer
+
+
+def test_layers_includes_loaded_payload(tmp_path):
+    stage, asset_layer = _stage_with_payload(tmp_path, Usd.Stage.LoadAll)
+    identifiers = {layer.identifier for layer in LayerInspector(stage).layers()}
+    assert asset_layer.identifier in identifiers
+
+
+def test_layers_omits_unloaded_payload(tmp_path):
+    # GetUsedLayers() reports what composition actually traversed, so a payload
+    # that was never loaded contributes no layer — and nothing gets written for
+    # it on save either.
+    stage, asset_layer = _stage_with_payload(tmp_path, Usd.Stage.LoadNone)
+    identifiers = {layer.identifier for layer in LayerInspector(stage).layers()}
+    assert asset_layer.identifier not in identifiers
+
+
+def test_layers_includes_clip_layer_without_sampling_first(tmp_path):
+    clip_path = tmp_path / "clip.001.usda"
+    clip_layer = Sdf.Layer.CreateNew(str(clip_path))
+    clip_stage = Usd.Stage.Open(clip_layer)
+    clip_prim = clip_stage.DefinePrim("/World/geo", "Xform")
+    clip_prim.CreateAttribute("size", Sdf.ValueTypeNames.Float).Set(1.0, 1.0)
+    clip_layer.Save()
+
+    root_path = tmp_path / "clip_root.usda"
+    root_layer = Sdf.Layer.CreateNew(str(root_path))
+    root_stage = Usd.Stage.Open(root_layer)
+    clips = Usd.ClipsAPI(root_stage.DefinePrim("/World/geo", "Xform"))
+    clips.SetClipAssetPaths([Sdf.AssetPath(str(clip_path))])
+    clips.SetClipPrimPath("/World/geo")
+    clips.SetClipActive([(1.0, 0)])
+    clips.SetClipTimes([(1.0, 1.0)])
+    root_layer.Save()
+
+    stage = Usd.Stage.Open(str(root_path))
+    names = {Path(layer.identifier).name for layer in LayerInspector(stage).layers()}
+    assert "clip.001.usda" in names
 
 
 def test_report_marks_root_and_session_layer(tmp_path):

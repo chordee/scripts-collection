@@ -108,7 +108,7 @@ pytest tests/test_stitch_usd_clips.py
 |---|---|---|
 | `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、Windows 引號包裹與 8.3 短路徑解析、job/block 組裝、環境變數篩選注入（白名單與前綴比對、敏感關鍵字排除、setEnv graceful fallback）、面板預設值、ROP 選取（含 File Cache／Vellum I/O 經內部子節點解析、usdrender_rop 的 Save to Directory 檢查與存檔前強制 Delete Files=Always、Use Selected ROP 停用 ROP Node 欄位）、Simulation 開關（強制單一 task、停用 Frames per task 欄位）、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
-| `test_layer_inspector.py` | layer 列舉（含 sublayer / session layer、`include_session_layers=False` 的排除行為）、`HoudiniSavePath` / `HoudiniSaveControl` 讀取（customLayerData 與 `/HoudiniLayerInfo` prim 兩種來源）、各 save control token 的 `willWriteFile` 判定、`unresolved_sublayers`（含 reference layer 底下缺失 sublayer 的回歸測試）、`full_report` summary、`to_json` / `layers_to_json`、`Sdf.AssetPath` 的 JSON 轉換 | hython / plain Python |
+| `test_layer_inspector.py` | layer 列舉（含 sublayer / session layer、`include_session_layers=False` 的排除行為、已載入 vs 未載入 payload、value clip 不需先取樣）、`HoudiniSavePath` / `HoudiniSaveControl` 讀取（customLayerData 與 `/HoudiniLayerInfo` prim 兩種來源）、各 save control token 的 `willWriteFile` 判定、`unresolved_sublayers`（含 reference layer 底下缺失 sublayer 的回歸測試）、`full_report` summary、`to_json` / `layers_to_json`、`Sdf.AssetPath` 的 JSON 轉換 | hython / plain Python |
 | `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json`、`set_prim_transform`（直接套用、replace_existing_local 逆矩陣抵消、recook 冪等性、型別支援、動態 timecode） | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
 | `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
@@ -590,7 +590,7 @@ LayerInspector(
 | 參數 | 預設 | 用途 |
 |---|---|---|
 | `stage` | (必填) | 要盤點的 `Usd.Stage`（例如 `lop_node.stage()`） |
-| `include_refs` | `True` | 除了 layer stack，也納入 reference / payload / clip 帶進來的 layer |
+| `include_refs` | `True` | 除了 layer stack，也納入 composition 實際走訪到的 layer（reference / 已載入的 payload / value clip） |
 | `include_session_layers` | `True` | 是否納入 session layer 及其底下的 sublayer |
 | `resolve_nodes` | `True` | 把 `HoudiniEditorNodes` 的 session id 還原成節點路徑（需要 `hou`） |
 
@@ -598,7 +598,7 @@ LayerInspector(
 
 主要方法：
 
-- `layers()` — 回傳所有 `Sdf.Layer`（含 session layer）
+- `layers()` — 回傳所有 `Sdf.Layer`（含 session layer）。`include_refs=True` 時的範圍是 `GetUsedLayers()`，也就是 **composition 實際消費到的 layer**，而非「宣告過的所有依賴」：宣告了但未載入的 payload（`Usd.Stage.LoadNone` 或未 load 的 prim）不會出現在結果中——它不貢獻任何 opinion，存檔時也不會寫出任何東西。value clip 則不需要先讀取 attribute 就會出現（已實測確認）。
 - `describe(layer, index=-1)` — 單一 layer 的完整描述 dict
 - `report()` — 所有 layer 的描述 list
 - `unresolved_sublayers()` — 宣告了但解不開的 sublayer（通常是檔案不存在）；掃描範圍與 `layers()` 一致，所以 reference / payload / clip 帶進來的 layer 也會被檢查
