@@ -37,9 +37,33 @@ def _stage_with_sublayer(tmp_path):
 def test_layers_includes_root_and_sublayer(tmp_path):
     stage, root_layer, sub_layer = _stage_with_sublayer(tmp_path)
     inspector = LayerInspector(stage)
-    identifiers = {l.identifier for l in inspector.layers()}
+    identifiers = {layer.identifier for layer in inspector.layers()}
     assert root_layer.identifier in identifiers
     assert sub_layer.identifier in identifiers
+
+
+def test_layers_excludes_session_layer_when_asked(tmp_path):
+    stage, root_layer, sub_layer = _stage_with_sublayer(tmp_path)
+    session_id = stage.GetSessionLayer().identifier
+
+    with_session = {layer.identifier for layer in LayerInspector(stage).layers()}
+    without_session = {
+        layer.identifier
+        for layer in LayerInspector(stage, include_session_layers=False).layers()
+    }
+
+    assert session_id in with_session
+    assert session_id not in without_session
+    # Everything else is still reported
+    assert without_session == with_session - {session_id}
+    assert root_layer.identifier in without_session
+    assert sub_layer.identifier in without_session
+
+
+def test_report_excludes_session_layer_when_asked(tmp_path):
+    stage, _, _ = _stage_with_sublayer(tmp_path)
+    report = LayerInspector(stage, include_session_layers=False).report()
+    assert not any(d["isSessionLayer"] for d in report)
 
 
 def test_report_marks_root_and_session_layer(tmp_path):
@@ -135,6 +159,31 @@ def test_unresolved_sublayers_reports_missing_file(tmp_path):
     assert len(missing) == 1
     assert missing[0]["subLayerPath"] == "./missing.usda"
     assert missing[0]["parent"] == root_layer.identifier
+
+
+def test_unresolved_sublayers_covers_referenced_layers(tmp_path):
+    ref_path = tmp_path / "ref.usda"
+    ref_layer = Sdf.Layer.CreateNew(str(ref_path))
+    ref_stage = Usd.Stage.Open(ref_layer)
+    ref_stage.DefinePrim("/Asset", "Xform")
+    ref_layer.subLayerPaths.append("./missing_in_ref.usda")
+    ref_layer.Save()
+
+    root_path = tmp_path / "root.usda"
+    root_layer = Sdf.Layer.CreateNew(str(root_path))
+    root_stage = Usd.Stage.Open(root_layer)
+    prim = root_stage.DefinePrim("/World", "Xform")
+    prim.GetReferences().AddReference(str(ref_path), "/Asset")
+    root_layer.Save()
+
+    stage = Usd.Stage.Open(str(root_path))
+    missing = LayerInspector(stage).unresolved_sublayers()
+
+    assert [d["subLayerPath"] for d in missing] == ["./missing_in_ref.usda"]
+    assert missing[0]["parent"] == ref_layer.identifier
+
+    # Without reference layers in scope the referenced layer isn't scanned
+    assert LayerInspector(stage, include_refs=False).unresolved_sublayers() == []
 
 
 def test_unresolved_sublayers_empty_when_all_resolve(tmp_path):

@@ -55,23 +55,36 @@ class LayerInspector:
         self,
         stage: Usd.Stage,
         include_refs: bool = True,
+        include_session_layers: bool = True,
         resolve_nodes: bool = True,
     ) -> None:
         self.stage = stage
         self.include_refs = include_refs
+        self.include_session_layers = include_session_layers
         self.resolve_nodes = resolve_nodes
 
     # ---------- collect ----------
 
     def layers(self) -> list:
-        stack = list(self.stage.GetLayerStack(includeSessionLayers=True))
+        stack = list(
+            self.stage.GetLayerStack(
+                includeSessionLayers=self.include_session_layers
+            )
+        )
         if not self.include_refs:
             return stack
-        known = {l.identifier for l in stack}
+        known = {layer.identifier for layer in stack}
+        if not self.include_session_layers:
+            # GetUsedLayers() always reports the session layer stack, so the
+            # layers GetLayerStack() just omitted have to be excluded again.
+            known.update(
+                layer.identifier
+                for layer in self.stage.GetLayerStack(includeSessionLayers=True)
+            )
         extra = [
-            l
-            for l in self.stage.GetUsedLayers(includeClipLayers=True)
-            if l.identifier not in known
+            layer
+            for layer in self.stage.GetUsedLayers(includeClipLayers=True)
+            if layer.identifier not in known
         ]
         return stack + extra
 
@@ -96,12 +109,18 @@ class LayerInspector:
         return found, stale
 
     def unresolved_sublayers(self) -> list:
-        """Sublayer paths that a layer declares but can't actually be resolved (usually a missing file)."""
+        """Sublayer paths that a layer declares but can't actually be resolved (usually a missing file).
+
+        Scans the same layers :meth:`layers` reports, so a layer pulled in by a
+        reference, payload, or clip is checked too — not just the local stack.
+        """
         missing: list = []
-        for parent in self.stage.GetLayerStack(includeSessionLayers=True):
-            for p in parent.subLayerPaths:
-                if Sdf.Layer.FindRelativeToLayer(parent, p) is None:
-                    missing.append({"parent": parent.identifier, "subLayerPath": p})
+        for parent in self.layers():
+            for sublayer_path in parent.subLayerPaths:
+                if Sdf.Layer.FindRelativeToLayer(parent, sublayer_path) is None:
+                    missing.append(
+                        {"parent": parent.identifier, "subLayerPath": sublayer_path}
+                    )
         return missing
 
     # ---------- describe ----------
@@ -130,7 +149,7 @@ class LayerInspector:
         }
 
     def report(self) -> list:
-        return [self.describe(l, i) for i, l in enumerate(self.layers())]
+        return [self.describe(layer, i) for i, layer in enumerate(self.layers())]
 
     def full_report(self) -> dict:
         layers = self.report()
