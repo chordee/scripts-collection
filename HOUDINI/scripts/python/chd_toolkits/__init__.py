@@ -7,6 +7,8 @@ Submodules
 - ``nerfstudio_cam``: Nerfstudio ``transforms.json`` → Houdini animated camera.
 - ``stitch_usd_clips``: USD Value Clips stitcher; also runnable as
   ``python -m chd_toolkits.stitch_usd_clips``.
+- ``layer_inspector``: stage layer survey with each layer's Houdini save
+  settings (``HoudiniSavePath`` / ``HoudiniSaveControl`` / editor nodes).
 
 Importing the package itself does not require ``hou``. The ``hou``-dependent
 helpers in ``core`` are re-exported best-effort, so ``stitch_usd_clips`` can be
