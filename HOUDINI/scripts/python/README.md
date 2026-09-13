@@ -108,7 +108,7 @@ pytest tests/test_stitch_usd_clips.py
 |---|---|---|
 | `test_afanasy_submitter.py` | Base64 路徑、command 與 frame step、Windows 引號包裹與 8.3 短路徑解析、job/block 組裝、環境變數篩選注入（白名單與前綴比對、敏感關鍵字排除、setEnv graceful fallback）、面板預設值、ROP 選取（含 File Cache／Vellum I/O 經內部子節點解析、usdrender_rop 的 Save to Directory 檢查與存檔前強制 Delete Files=Always、Use Selected ROP 停用 ROP Node 欄位）、Simulation 開關（強制單一 task、停用 Frames per task 欄位）、存檔確認取消、錯誤訊息與視窗替換 | hython / plain Python；UI 與 af 使用 mock |
 | `test_stitch_usd_clips.py` | 全部公開函式 + integration（含巢狀 primpath 階層保留、distinct `clip_primpath`、`frame_range`/`scene_range` 反向拒絕） | hython / plain Python |
-| `test_layer_inspector.py` | layer 列舉（含 sublayer / session layer、`include_session_layers=False` 的排除行為、已載入 vs 未載入 payload、value clip 不需先取樣）、`HoudiniSavePath` / `HoudiniSaveControl` 讀取（customLayerData 與 `/HoudiniLayerInfo` prim 兩種來源）、各 save control token 的 `willWriteFile` 判定、`unresolved_sublayers`（含 reference layer 底下缺失 sublayer 的回歸測試）、`full_report` summary、`to_json` / `layers_to_json`、`Sdf.AssetPath` 的 JSON 轉換 | hython / plain Python |
+| `test_layer_inspector.py` | layer 列舉（含 sublayer / session layer、`include_session_layers=False` 的排除行為、已載入 vs 未載入 payload、value clip 不需先取樣）、`HoudiniSavePath` / `HoudiniSaveControl` 讀取（customLayerData 與 `/HoudiniLayerInfo` prim 兩種來源）、各 save control token 的 `willWriteFile` 判定、`creatorNode` / `isSopLayer` 欄位、`unresolved_sublayers`（含 reference layer 底下缺失 sublayer 的回歸測試）、`full_report` summary、`to_json` / `layers_to_json`、`Sdf.AssetPath` 的 JSON 轉換 | hython / plain Python |
 | `test_core_usd.py` | `compute_prim_scale`、`get_material_from_prim`、`get_all_asset_paths_from_*`、`get_clip_*`、`get_all_layers_in_layer`（含 cycle detection、`report_missing`）、`get_all_asset_paths_from_stage` / `get_all_clip_sequences_from_stage`（relative `prim_path` 拒絕）、`get_all_shader_texture_paths_from_stage`（UDIM、missing、binding 無關、AssetArray input、time-sampled input）、`get_all_vdb_paths_from_stage`（time sample 聯集、default fallback、Field3DAsset 排除、missing）、`dump_json`、`set_prim_transform`（直接套用、replace_existing_local 逆矩陣抵消、recook 冪等性、型別支援、動態 timecode） | hython only |
 | `test_core_numpy.py` | `convolve2d`（含 input validation、dtype 升格、kernel flip）、`scipy_convolve2d`（若 scipy 存在） | hython only |
 | `test_core_hou.py` | `matrix_manipulate`（identity/translate/Matrix3 升格/shape 拒絕）、`primitive_xform`（identity/translate/int time wrap）、`point_attrib_to_numpy`（float/int 屬性、missing） | hython only |
@@ -610,6 +610,8 @@ LayerInspector(
 | 欄位 | 說明 |
 |---|---|
 | `identifier` / `displayName` / `realPath` | layer 識別資訊；匿名 layer 的 `realPath` 為空字串 |
+| `creatorNode` | 建立此 layer 的節點路徑（由 `HoudiniCreatorNode` 還原）。implicit layer 沒有 savePath、`displayName` 也只是 `'LOP'`，這個欄位是辨識它的唯一依據——Houdini 自己的 Scene Graph Layers 面板同樣用它當標籤 |
+| `isSopLayer` | 是否為 SOP 匯入產生的 layer（`HoudiniTreatAsSopLayer`） |
 | `implicit` | 是否為匿名（記憶體內、尚未對應檔案）layer |
 | `savePath` / `saveControl` | `/HoudiniLayerInfo` 上的 `HoudiniSavePath` / `HoudiniSaveControl` |
 | `willWriteFile` | 有 `savePath` 且 `saveControl` 屬於會寫檔的 token |
@@ -626,6 +628,8 @@ LayerInspector(
 | `Placeholder` | 否 | Ignore |
 | `DoNotSave` | 否 | Do Not Save |
 | （沒有這個 key） | 否 | Implicit（併入 parent layer 一起存） |
+
+Implicit layer（沒有 `HoudiniSaveControl` 的那些）在報告中 `savePath` / `saveControl` 都是 `None`、`displayName` 只會是 `'LOP'`，要辨識它們請看 `creatorNode` 與 `editorNodes`。
 
 #### 使用範例
 

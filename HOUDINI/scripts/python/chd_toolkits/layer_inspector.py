@@ -42,6 +42,8 @@ class LayerInspector:
     SAVE_PATH_KEY = "HoudiniSavePath"
     SAVE_CONTROL_KEY = "HoudiniSaveControl"
     EDITOR_NODES_KEY = "HoudiniEditorNodes"
+    CREATOR_NODE_KEY = "HoudiniCreatorNode"
+    SOP_LAYER_KEY = "HoudiniTreatAsSopLayer"
     META_PRIM = "/HoudiniLayerInfo"
     # Save-control tokens Houdini authors on /HoudiniLayerInfo, per its own
     # Scene Graph Layers panel (``scenegraphlayers/model.py``): ``Explicit``
@@ -118,6 +120,12 @@ class LayerInspector:
                 stale.append(int(sid))
         return found, stale
 
+    def _node_path(self, node_id) -> Optional[str]:
+        if node_id is None:
+            return None
+        found, _ = self._node_paths([node_id])
+        return found[0] if found else None
+
     def unresolved_sublayers(self) -> list:
         """Sublayer paths that a layer declares but can't actually be resolved (usually a missing file).
 
@@ -140,10 +148,18 @@ class LayerInspector:
         save_path = meta.get(self.SAVE_PATH_KEY)
         save_control = meta.get(self.SAVE_CONTROL_KEY)
         editor_nodes, stale_ids = self._node_paths(meta.get(self.EDITOR_NODES_KEY))
+        # A layer with no save control is "Implicit" in Houdini's terms: it is
+        # folded into its parent's file, carries no save path, and its
+        # GetDisplayName() is a bare "LOP". The node that created it is the only
+        # thing identifying it — that is what Houdini's own Scene Graph Layers
+        # panel labels these rows with.
+        creator_node = self._node_path(meta.get(self.CREATOR_NODE_KEY))
         return {
             "index": index,
             "identifier": layer.identifier,
             "displayName": layer.GetDisplayName(),
+            "creatorNode": creator_node,
+            "isSopLayer": bool(meta.get(self.SOP_LAYER_KEY)),
             "implicit": layer.anonymous,
             "realPath": layer.realPath or "",
             "savePath": save_path,

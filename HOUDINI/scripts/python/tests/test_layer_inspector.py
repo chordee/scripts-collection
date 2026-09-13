@@ -252,6 +252,27 @@ def test_unresolved_sublayers_empty_when_all_resolve(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def test_describe_reports_no_creator_node_without_metadata(tmp_path):
+    stage, root_layer, _ = _stage_with_sublayer(tmp_path)
+    entry = LayerInspector(stage).describe(root_layer)
+    assert entry["creatorNode"] is None
+    assert entry["isSopLayer"] is False
+
+
+def test_describe_creator_node_is_none_when_session_id_is_stale(tmp_path):
+    stage, root_layer, _ = _stage_with_sublayer(tmp_path)
+    root_layer.customLayerData = {"HoudiniCreatorNode": 999999}
+    entry = LayerInspector(stage).describe(root_layer)
+    assert entry["creatorNode"] is None
+
+
+def test_describe_reports_sop_layer_flag(tmp_path):
+    stage, root_layer, _ = _stage_with_sublayer(tmp_path)
+    root_layer.customLayerData = {"HoudiniTreatAsSopLayer": True}
+    entry = LayerInspector(stage).describe(root_layer)
+    assert entry["isSopLayer"] is True
+
+
 def test_describe_without_editor_nodes_metadata_returns_empty_lists(tmp_path):
     stage, root_layer, _ = _stage_with_sublayer(tmp_path)
     inspector = LayerInspector(stage)
