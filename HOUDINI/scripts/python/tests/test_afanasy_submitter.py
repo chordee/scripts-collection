@@ -464,6 +464,15 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertTrue(is_allowed_env_var("JOB_ROOT"))
         self.assertTrue(is_allowed_env_var("AXIOM_PATH"))
         self.assertTrue(is_allowed_env_var("REZ_USED_REQUEST"))
+        self.assertTrue(is_allowed_env_var("HTOA"))
+        self.assertTrue(is_allowed_env_var("HTOA_PATH"))
+        self.assertTrue(is_allowed_env_var("ARNOLD_ROOT"))
+        self.assertTrue(is_allowed_env_var("ARNOLD_PLUGIN_PATH"))
+        self.assertTrue(is_allowed_env_var("ARNOLD_LICENSE_ORDER"))
+        self.assertTrue(is_allowed_env_var("SOLIDANGLE_LICENSE"))
+        # Windows upper-cases os.environ keys, but a POSIX submitter sees the
+        # var under its authored mixed-case spelling.
+        self.assertTrue(is_allowed_env_var("solidangle_LICENSE"))
         self.assertFalse(is_allowed_env_var("PASSWORD"))
         self.assertFalse(is_allowed_env_var("SECRET_KEY"))
         self.assertFalse(is_allowed_env_var("FOO_VAR"))
@@ -474,6 +483,9 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertFalse(is_allowed_env_var("REZ_PASS"))
         self.assertFalse(is_allowed_env_var("RP_SECRET_KEY"))
         self.assertFalse(is_allowed_env_var("PUB_CREDENTIALS"))
+        # The deny list still wins over the newly allowed prefixes
+        self.assertFalse(is_allowed_env_var("ARNOLD_LICENSE_KEY"))
+        self.assertFalse(is_allowed_env_var("HTOA_AUTH_TOKEN"))
 
     def test_submit_job_injects_environment_variables(self):
         hou_module = FakeHou()
