@@ -68,10 +68,10 @@ def needs_short_path_expansion(name: str) -> bool:
 
 
 # The system PATH is read by the Windows loader and by cmd.exe -- which is what
-# Afanasy runs the worker command through -- rather than by Houdini, so it keeps
-# its native backslashes. Every other path list we touch is consumed by
-# Houdini, Arnold, or Python, all of which take forward slashes on Windows, and
-# Houdini authors HOUDINI_PATH that way itself.
+# Afanasy runs the worker command through -- rather than by Houdini, so it is
+# normalized to native backslashes. Every other path list we touch is consumed
+# by Houdini, Arnold, or Python, all of which take forward slashes on Windows,
+# and Houdini authors HOUDINI_PATH that way itself.
 NATIVE_SEPARATOR_ENV_NAMES = frozenset({"PATH"})
 
 
@@ -84,6 +84,18 @@ def to_forward_slashes(value: str, platform_name=os.name) -> str:
     if platform_name != "nt":
         return value
     return value.replace("\\", "/")
+
+
+def to_native_slashes(value: str, platform_name=os.name) -> str:
+    """Rewrite forward slashes as Windows backslashes.
+
+    Safe on Windows because "/" there is only ever a separator -- it is not a
+    legal filename character. On POSIX a backslash *is* legal in a filename, so
+    this is a no-op rather than the mirror rewrite.
+    """
+    if platform_name != "nt":
+        return value
+    return value.replace("/", "\\")
 
 
 def expand_short_paths(value: str, platform_name=os.name) -> str:
@@ -293,7 +305,9 @@ def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
                 value = str(env_val)
                 if needs_short_path_expansion(env_key):
                     value = expand_short_paths(value)
-                    if env_key.upper() not in NATIVE_SEPARATOR_ENV_NAMES:
+                    if env_key.upper() in NATIVE_SEPARATOR_ENV_NAMES:
+                        value = to_native_slashes(value)
+                    else:
                         value = to_forward_slashes(value)
                 block.setEnv(env_key, value)
 

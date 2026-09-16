@@ -24,6 +24,7 @@ from chd_toolkits.afanasy_submitter import (  # noqa: E402
     is_allowed_env_var,
     needs_short_path_expansion,
     to_forward_slashes,
+    to_native_slashes,
     resolve_rop_node,
     session_defaults,
     show,
@@ -523,15 +524,30 @@ class SubmitterJobTests(unittest.TestCase):
             to_forward_slashes("/opt/a\\b", platform_name="posix"), "/opt/a\\b"
         )
 
-    def test_submit_job_normalizes_separators_except_for_system_path(self):
+    def test_to_native_slashes(self):
+        self.assertEqual(
+            to_native_slashes("C:/Program Files/Foo", platform_name="nt"),
+            "C:\\Program Files\\Foo",
+        )
+        # The os.pathsep separator itself is untouched
+        self.assertEqual(
+            to_native_slashes("C:/a;D:\\b", platform_name="nt"), "C:\\a;D:\\b"
+        )
+        # A backslash is a legal POSIX filename character, so this must not
+        # mirror the rewrite there.
+        self.assertEqual(
+            to_native_slashes("/opt/a/b", platform_name="posix"), "/opt/a/b"
+        )
+
+    def test_submit_job_normalizes_separators_per_consumer(self):
         hou_module = FakeHou()
         hou_module.hipFile = FakeHipFileWithSave()
         test_env = {
+            # Read by Houdini / Python -> forward slashes
             "HOUDINI_PATH": "D:\\houdini\\lib;&",
             "PYTHONPATH": "D:\\py\\lib",
-            # PATH is consumed by the Windows loader / cmd.exe, so it keeps its
-            # native separators.
-            "PATH": "C:\\Windows\\system32",
+            # Read by the Windows loader / cmd.exe -> native backslashes
+            "PATH": "C:/Windows/system32;D:\\tools",
         }
         with mock.patch.dict(os.environ, test_env, clear=True):
             submit_job(
@@ -544,7 +560,9 @@ class SubmitterJobTests(unittest.TestCase):
         if os.name == "nt":
             self.assertEqual(block.env.get("HOUDINI_PATH"), "D:/houdini/lib;&")
             self.assertEqual(block.env.get("PYTHONPATH"), "D:/py/lib")
-        self.assertEqual(block.env.get("PATH"), "C:\\Windows\\system32")
+            self.assertEqual(
+                block.env.get("PATH"), "C:\\Windows\\system32;D:\\tools"
+            )
 
     def test_expand_short_paths_is_a_noop_off_windows(self):
         value = "C:\\PROGRA~1\\Foo"
