@@ -21,14 +21,19 @@ class SubmissionSettings:
     is_simulation: bool = False
 
 
-# PATH is deliberately absent: setEnv replaces the value on the worker rather
-# than appending to it, so propagating the submitting workstation's PATH wipes
-# out whatever the farm put on the worker's own -- including the directory
-# holding Arnold's ai.dll, which Windows locates through the DLL search path.
-# The worker's environment is the farm's to configure.
-ALLOWED_ENV_NAMES = frozenset(
-    {"PYTHONPATH", "SIDEFXLABS", "HOUDINI_PATH", "HOUDINI_CGRU_PATH"}
-)
+# PATH and HOUDINI_PATH are deliberately absent: setEnv replaces a value on the
+# worker rather than appending to it, so propagating the submitting
+# workstation's copy wipes out whatever the farm configured.
+#
+# For PATH that costs the worker the directory holding Arnold's ai.dll, which
+# Windows locates through the DLL search path. For HOUDINI_PATH it costs the
+# worker its package directories -- and HTOA adds its own bin to the
+# in-process PATH from its package at Houdini startup, so overriding
+# HOUDINI_PATH stops HTOA loading at all, producing the same missing-ai.dll
+# symptom even when Arnold is installed at an identical path.
+#
+# The worker's Houdini environment is the farm's to configure.
+ALLOWED_ENV_NAMES = frozenset({"PYTHONPATH", "SIDEFXLABS", "HOUDINI_CGRU_PATH"})
 ALLOWED_ENV_PREFIXES = (
     "CGRU_",
     "RP_",
