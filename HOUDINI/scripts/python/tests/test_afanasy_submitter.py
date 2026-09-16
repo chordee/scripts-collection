@@ -20,7 +20,9 @@ from chd_toolkits.afanasy_submitter import (  # noqa: E402
     configure_usdrender_rop_settings,
     decode_text,
     encode_text,
+    expand_short_paths,
     is_allowed_env_var,
+    needs_short_path_expansion,
     resolve_rop_node,
     session_defaults,
     show,
@@ -486,6 +488,103 @@ class SubmitterJobTests(unittest.TestCase):
         # The deny list still wins over the newly allowed prefixes
         self.assertFalse(is_allowed_env_var("ARNOLD_LICENSE_KEY"))
         self.assertFalse(is_allowed_env_var("HTOA_AUTH_TOKEN"))
+
+    def test_needs_short_path_expansion(self):
+        self.assertTrue(needs_short_path_expansion("PATH"))
+        self.assertTrue(needs_short_path_expansion("PYTHONPATH"))
+        self.assertTrue(needs_short_path_expansion("HOUDINI_PATH"))
+        self.assertTrue(needs_short_path_expansion("ARNOLD_PLUGIN_PATH"))
+        self.assertTrue(needs_short_path_expansion("HTOA_PATH"))
+        self.assertTrue(needs_short_path_expansion("houdini_path"))
+        # A path list whose name does not end in PATH still needs expanding
+        self.assertTrue(needs_short_path_expansion("ARNOLD_MATERIALX_NODE_DEFINITIONS"))
+        # Outside the rule: non-path values, plus single-path variables like
+        # ARNOLD_ROOT that the PATH suffix does not cover. Leaving those alone
+        # is the safe default -- add them to SHORT_PATH_ENV_NAMES if one turns
+        # out to be authored as a short path.
+        self.assertFalse(needs_short_path_expansion("SOLIDANGLE_LICENSE"))
+        self.assertFalse(needs_short_path_expansion("ARNOLD_ROOT"))
+        self.assertFalse(needs_short_path_expansion("JOB_NAME"))
+        self.assertFalse(needs_short_path_expansion("REZ_ENV"))
+
+    def test_expand_short_paths_is_a_noop_off_windows(self):
+        value = "C:\\PROGRA~1\\Foo"
+        self.assertEqual(expand_short_paths(value, platform_name="posix"), value)
+
+    def test_expand_short_paths_leaves_values_without_tilde_untouched(self):
+        value = "D:/Programs/Side Effects Software/Houdini 22.0.429"
+        self.assertEqual(expand_short_paths(value, platform_name="nt"), value)
+
+    def test_expand_short_paths_preserves_non_path_tokens(self):
+        # Houdini's "&" (the default path) must survive verbatim, and a short
+        # path that does not exist is left alone rather than guessed at.
+        for value in ("&", "C:\\NOEXIST~1\\foo"):
+            self.assertEqual(expand_short_paths(value, platform_name="nt"), value)
+
+    def test_expand_short_paths_expands_a_real_short_path(self):
+        if os.name != "nt":
+            self.skipTest("8.3 short paths are Windows-only")
+        import ctypes
+
+        long_path = os.environ.get("ProgramFiles", "C:\\Program Files")
+        buffer = ctypes.create_unicode_buffer(260)
+        if not ctypes.windll.kernel32.GetShortPathNameW(long_path, buffer, 260):
+            self.skipTest("8dot3name is disabled on this volume")
+        short_path = buffer.value
+        if "~" not in short_path:
+            self.skipTest("no 8.3 alias generated for this directory")
+
+        self.assertEqual(expand_short_paths(short_path), long_path)
+
+        mixed = os.pathsep.join([short_path, "D:/keep/as-is", "&"])
+        expanded = expand_short_paths(mixed).split(os.pathsep)
+        self.assertEqual(expanded, [long_path, "D:/keep/as-is", "&"])
+
+    def test_submit_job_expands_short_paths_in_environment_values(self):
+        if os.name != "nt":
+            self.skipTest("8.3 short paths are Windows-only")
+        import ctypes
+
+        long_path = os.environ.get("ProgramFiles", "C:\\Program Files")
+        buffer = ctypes.create_unicode_buffer(260)
+        if not ctypes.windll.kernel32.GetShortPathNameW(long_path, buffer, 260):
+            self.skipTest("8dot3name is disabled on this volume")
+        short_path = buffer.value
+        if "~" not in short_path:
+            self.skipTest("no 8.3 alias generated for this directory")
+
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        with mock.patch.dict(os.environ, {"HOUDINI_PATH": short_path}, clear=True):
+            submit_job(
+                make_settings(),
+                hou_module,
+                FakeAf,
+                is_file=lambda _: True,
+            )
+        block = FakeAf.last_job.blocks[0]
+        self.assertEqual(block.env.get("HOUDINI_PATH"), long_path)
+
+    def test_submit_job_only_expands_declared_path_list_variables(self):
+        # Not every propagated variable is a path, so expansion must not run
+        # over all of them -- only the ones in SHORT_PATH_ENV_NAMES.
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        test_env = {
+            "JOB_NAME": "shot~1",
+            "SOLIDANGLE_LICENSE": "5053@localhost",
+            "ARNOLD_ROOT": "D:/Programs/Arnold-7.0.0.2-windows",
+        }
+        with mock.patch.dict(os.environ, test_env, clear=True):
+            submit_job(
+                make_settings(),
+                hou_module,
+                FakeAf,
+                is_file=lambda _: True,
+            )
+        block = FakeAf.last_job.blocks[0]
+        for name, value in test_env.items():
+            self.assertEqual(block.env.get(name), value)
 
     def test_submit_job_injects_environment_variables(self):
         hou_module = FakeHou()

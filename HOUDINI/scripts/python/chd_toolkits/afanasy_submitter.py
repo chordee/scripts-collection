@@ -52,6 +52,49 @@ DISALLOWED_ENV_SUBSTRINGS = (
 )
 
 
+# Path-list variables whose names do not end in "PATH". Anything that does end
+# that way is covered by the suffix rule below; this set is only for the
+# exceptions -- HTOA's MaterialX definitions list being the one that prompted
+# it. Expansion is deliberately not applied to every propagated variable: a
+# non-path value that merely happens to contain "~" and to match a file
+# relative to the current working directory would otherwise be rewritten.
+SHORT_PATH_ENV_NAMES = frozenset({"ARNOLD_MATERIALX_NODE_DEFINITIONS"})
+
+
+def needs_short_path_expansion(name: str) -> bool:
+    """Return True if this variable's value is a path list worth expanding."""
+    upper_name = name.upper()
+    return upper_name.endswith("PATH") or upper_name in SHORT_PATH_ENV_NAMES
+
+
+def expand_short_paths(value: str, platform_name=os.name) -> str:
+    """Expand Windows 8.3 short path components ("PROGRA~1") to their long form.
+
+    HTOA authors several of its variables from short paths (seen in
+    HOUDINI_PATH and ARNOLD_MATERIALX_NODE_DEFINITIONS). Those aliases are
+    generated per-volume on the machine that created the directory, so a farm
+    worker may resolve one to a different directory, or fail outright when
+    8dot3name is disabled on its volumes.
+
+    Only entries that contain "~" *and* exist on disk are rewritten, so
+    non-path tokens pass through untouched -- Houdini's "&" (meaning the
+    default path) must survive verbatim. Callers apply this only to variables
+    :func:`needs_short_path_expansion` accepts.
+    """
+    if platform_name != "nt" or "~" not in value:
+        return value
+    expanded = []
+    for part in value.split(os.pathsep):
+        if "~" in part and os.path.exists(part):
+            try:
+                expanded.append(str(Path(part).resolve()))
+            except OSError:
+                expanded.append(part)
+        else:
+            expanded.append(part)
+    return os.pathsep.join(expanded)
+
+
 def is_allowed_env_var(name: str) -> bool:
     """Return True if the environment variable is approved for farm propagation."""
     upper_name = name.upper()
@@ -228,7 +271,10 @@ def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
     if callable(getattr(block, "setEnv", None)):
         for env_key, env_val in os.environ.items():
             if is_allowed_env_var(env_key):
-                block.setEnv(env_key, str(env_val))
+                value = str(env_val)
+                if needs_short_path_expansion(env_key):
+                    value = expand_short_paths(value)
+                block.setEnv(env_key, value)
 
     job.blocks.append(block)
     return job.send()
