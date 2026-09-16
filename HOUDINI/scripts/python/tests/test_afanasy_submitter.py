@@ -23,6 +23,7 @@ from chd_toolkits.afanasy_submitter import (  # noqa: E402
     expand_short_paths,
     is_allowed_env_var,
     needs_short_path_expansion,
+    to_forward_slashes,
     resolve_rop_node,
     session_defaults,
     show,
@@ -507,6 +508,44 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertFalse(needs_short_path_expansion("JOB_NAME"))
         self.assertFalse(needs_short_path_expansion("REZ_ENV"))
 
+    def test_to_forward_slashes(self):
+        self.assertEqual(
+            to_forward_slashes("C:\\Program Files\\Foo", platform_name="nt"),
+            "C:/Program Files/Foo",
+        )
+        # The os.pathsep separator itself is untouched
+        self.assertEqual(
+            to_forward_slashes("C:\\a;D:/b;&", platform_name="nt"),
+            "C:/a;D:/b;&",
+        )
+        # POSIX backslashes are legal filename characters, so leave them alone
+        self.assertEqual(
+            to_forward_slashes("/opt/a\\b", platform_name="posix"), "/opt/a\\b"
+        )
+
+    def test_submit_job_normalizes_separators_except_for_system_path(self):
+        hou_module = FakeHou()
+        hou_module.hipFile = FakeHipFileWithSave()
+        test_env = {
+            "HOUDINI_PATH": "D:\\houdini\\lib;&",
+            "PYTHONPATH": "D:\\py\\lib",
+            # PATH is consumed by the Windows loader / cmd.exe, so it keeps its
+            # native separators.
+            "PATH": "C:\\Windows\\system32",
+        }
+        with mock.patch.dict(os.environ, test_env, clear=True):
+            submit_job(
+                make_settings(),
+                hou_module,
+                FakeAf,
+                is_file=lambda _: True,
+            )
+        block = FakeAf.last_job.blocks[0]
+        if os.name == "nt":
+            self.assertEqual(block.env.get("HOUDINI_PATH"), "D:/houdini/lib;&")
+            self.assertEqual(block.env.get("PYTHONPATH"), "D:/py/lib")
+        self.assertEqual(block.env.get("PATH"), "C:\\Windows\\system32")
+
     def test_expand_short_paths_is_a_noop_off_windows(self):
         value = "C:\\PROGRA~1\\Foo"
         self.assertEqual(expand_short_paths(value, platform_name="posix"), value)
@@ -563,7 +602,9 @@ class SubmitterJobTests(unittest.TestCase):
                 is_file=lambda _: True,
             )
         block = FakeAf.last_job.blocks[0]
-        self.assertEqual(block.env.get("HOUDINI_PATH"), long_path)
+        # HOUDINI_PATH is normalized to forward slashes on the way out, which is
+        # how Houdini authors it in the first place.
+        self.assertEqual(block.env.get("HOUDINI_PATH"), to_forward_slashes(long_path))
 
     def test_submit_job_only_expands_declared_path_list_variables(self):
         # Not every propagated variable is a path, so expansion must not run

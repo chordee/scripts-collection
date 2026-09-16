@@ -67,6 +67,25 @@ def needs_short_path_expansion(name: str) -> bool:
     return upper_name.endswith("PATH") or upper_name in SHORT_PATH_ENV_NAMES
 
 
+# The system PATH is read by the Windows loader and by cmd.exe -- which is what
+# Afanasy runs the worker command through -- rather than by Houdini, so it keeps
+# its native backslashes. Every other path list we touch is consumed by
+# Houdini, Arnold, or Python, all of which take forward slashes on Windows, and
+# Houdini authors HOUDINI_PATH that way itself.
+NATIVE_SEPARATOR_ENV_NAMES = frozenset({"PATH"})
+
+
+def to_forward_slashes(value: str, platform_name=os.name) -> str:
+    """Rewrite Windows backslashes as forward slashes.
+
+    Path.resolve() hands back native separators, which would otherwise leave a
+    single value mixing both styles once one entry is expanded.
+    """
+    if platform_name != "nt":
+        return value
+    return value.replace("\\", "/")
+
+
 def expand_short_paths(value: str, platform_name=os.name) -> str:
     """Expand Windows 8.3 short path components ("PROGRA~1") to their long form.
 
@@ -274,6 +293,8 @@ def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
                 value = str(env_val)
                 if needs_short_path_expansion(env_key):
                     value = expand_short_paths(value)
+                    if env_key.upper() not in NATIVE_SEPARATOR_ENV_NAMES:
+                        value = to_forward_slashes(value)
                 block.setEnv(env_key, value)
 
     job.blocks.append(block)
