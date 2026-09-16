@@ -21,8 +21,13 @@ class SubmissionSettings:
     is_simulation: bool = False
 
 
+# PATH is deliberately absent: setEnv replaces the value on the worker rather
+# than appending to it, so propagating the submitting workstation's PATH wipes
+# out whatever the farm put on the worker's own -- including the directory
+# holding Arnold's ai.dll, which Windows locates through the DLL search path.
+# The worker's environment is the farm's to configure.
 ALLOWED_ENV_NAMES = frozenset(
-    {"PATH", "PYTHONPATH", "SIDEFXLABS", "HOUDINI_PATH", "HOUDINI_CGRU_PATH"}
+    {"PYTHONPATH", "SIDEFXLABS", "HOUDINI_PATH", "HOUDINI_CGRU_PATH"}
 )
 ALLOWED_ENV_PREFIXES = (
     "CGRU_",

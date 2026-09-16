@@ -457,7 +457,10 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertEqual(events, [("set_deletefiles", "always"), ("save",)])
 
     def test_is_allowed_env_var(self):
-        self.assertTrue(is_allowed_env_var("PATH"))
+        # PATH must never be propagated: setEnv replaces it on the worker, which
+        # would wipe the farm's own PATH and with it the directory holding
+        # Arnold's ai.dll.
+        self.assertFalse(is_allowed_env_var("PATH"))
         self.assertTrue(is_allowed_env_var("PYTHONPATH"))
         self.assertTrue(is_allowed_env_var("SIDEFXLABS"))
         self.assertTrue(is_allowed_env_var("HOUDINI_PATH"))
@@ -539,14 +542,14 @@ class SubmitterJobTests(unittest.TestCase):
             to_native_slashes("/opt/a/b", platform_name="posix"), "/opt/a/b"
         )
 
-    def test_submit_job_normalizes_separators_per_consumer(self):
+    def test_submit_job_normalizes_separators_and_omits_system_path(self):
         hou_module = FakeHou()
         hou_module.hipFile = FakeHipFileWithSave()
         test_env = {
             # Read by Houdini / Python -> forward slashes
             "HOUDINI_PATH": "D:\\houdini\\lib;&",
             "PYTHONPATH": "D:\\py\\lib",
-            # Read by the Windows loader / cmd.exe -> native backslashes
+            # Never propagated -- the worker keeps the farm's own PATH
             "PATH": "C:/Windows/system32;D:\\tools",
         }
         with mock.patch.dict(os.environ, test_env, clear=True):
@@ -557,12 +560,10 @@ class SubmitterJobTests(unittest.TestCase):
                 is_file=lambda _: True,
             )
         block = FakeAf.last_job.blocks[0]
+        self.assertNotIn("PATH", block.env)
         if os.name == "nt":
             self.assertEqual(block.env.get("HOUDINI_PATH"), "D:/houdini/lib;&")
             self.assertEqual(block.env.get("PYTHONPATH"), "D:/py/lib")
-            self.assertEqual(
-                block.env.get("PATH"), "C:\\Windows\\system32;D:\\tools"
-            )
 
     def test_expand_short_paths_is_a_noop_off_windows(self):
         value = "C:\\PROGRA~1\\Foo"
