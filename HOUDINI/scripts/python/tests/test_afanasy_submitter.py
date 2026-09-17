@@ -463,9 +463,7 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertFalse(is_allowed_env_var("PATH"))
         self.assertTrue(is_allowed_env_var("PYTHONPATH"))
         self.assertTrue(is_allowed_env_var("SIDEFXLABS"))
-        # HOUDINI_PATH is not propagated either: overriding it stops the worker
-        # loading its own packages, HTOA's included.
-        self.assertFalse(is_allowed_env_var("HOUDINI_PATH"))
+        self.assertTrue(is_allowed_env_var("HOUDINI_PATH"))
         self.assertTrue(is_allowed_env_var("HOUDINI_CGRU_PATH"))
         self.assertTrue(is_allowed_env_var("CGRU_LOCATION"))
         self.assertTrue(is_allowed_env_var("RP_PROJECT"))
@@ -549,10 +547,10 @@ class SubmitterJobTests(unittest.TestCase):
         hou_module.hipFile = FakeHipFileWithSave()
         test_env = {
             # Read by Houdini / Python -> forward slashes
-            "PYTHONPATH": "D:\\py\\lib;D:\\py\\extra",
-            # Never propagated -- the worker keeps the farm's own copies
-            "PATH": "C:/Windows/system32;D:\\tools",
             "HOUDINI_PATH": "D:\\houdini\\lib;&",
+            "PYTHONPATH": "D:\\py\\lib",
+            # Never propagated -- the worker keeps the farm's own PATH
+            "PATH": "C:/Windows/system32;D:\\tools",
         }
         with mock.patch.dict(os.environ, test_env, clear=True):
             submit_job(
@@ -563,9 +561,9 @@ class SubmitterJobTests(unittest.TestCase):
             )
         block = FakeAf.last_job.blocks[0]
         self.assertNotIn("PATH", block.env)
-        self.assertNotIn("HOUDINI_PATH", block.env)
         if os.name == "nt":
-            self.assertEqual(block.env.get("PYTHONPATH"), "D:/py/lib;D:/py/extra")
+            self.assertEqual(block.env.get("HOUDINI_PATH"), "D:/houdini/lib;&")
+            self.assertEqual(block.env.get("PYTHONPATH"), "D:/py/lib")
 
     def test_expand_short_paths_is_a_noop_off_windows(self):
         value = "C:\\PROGRA~1\\Foo"
@@ -615,7 +613,7 @@ class SubmitterJobTests(unittest.TestCase):
 
         hou_module = FakeHou()
         hou_module.hipFile = FakeHipFileWithSave()
-        with mock.patch.dict(os.environ, {"PYTHONPATH": short_path}, clear=True):
+        with mock.patch.dict(os.environ, {"HOUDINI_PATH": short_path}, clear=True):
             submit_job(
                 make_settings(),
                 hou_module,
@@ -623,9 +621,9 @@ class SubmitterJobTests(unittest.TestCase):
                 is_file=lambda _: True,
             )
         block = FakeAf.last_job.blocks[0]
-        # Path lists are normalized to forward slashes on the way out, which is
-        # how Houdini authors them in the first place.
-        self.assertEqual(block.env.get("PYTHONPATH"), to_forward_slashes(long_path))
+        # HOUDINI_PATH is normalized to forward slashes on the way out, which is
+        # how Houdini authors it in the first place.
+        self.assertEqual(block.env.get("HOUDINI_PATH"), to_forward_slashes(long_path))
 
     def test_submit_job_only_expands_declared_path_list_variables(self):
         # Not every propagated variable is a path, so expansion must not run
@@ -652,7 +650,7 @@ class SubmitterJobTests(unittest.TestCase):
         hou_module = FakeHou()
         hou_module.hipFile = FakeHipFileWithSave()
         test_env = {
-            "PYTHONPATH": "D:/custom/path",
+            "HOUDINI_PATH": "D:/custom/path",
             "CGRU_PYTHON": "python",
             "RP_SHOT": "sh01",
             "PUB_ASSET": "hero",
@@ -673,7 +671,7 @@ class SubmitterJobTests(unittest.TestCase):
                 is_file=lambda _: True,
             )
         block = FakeAf.last_job.blocks[0]
-        self.assertEqual(block.env.get("PYTHONPATH"), "D:/custom/path")
+        self.assertEqual(block.env.get("HOUDINI_PATH"), "D:/custom/path")
         self.assertEqual(block.env.get("CGRU_PYTHON"), "python")
         self.assertEqual(block.env.get("RP_SHOT"), "sh01")
         self.assertEqual(block.env.get("PUB_ASSET"), "hero")
