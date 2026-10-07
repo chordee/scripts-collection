@@ -7,6 +7,7 @@ what the procedural itself uses.
 """
 
 import importlib.util
+import types
 from pathlib import Path
 
 import pytest
@@ -246,3 +247,49 @@ def test_render_stage_is_left_untouched():
     _import_skinned(stage, ["/World/Char"], 5.5)
     assert stage.GetSessionLayer().ExportToString() == session_before
     assert stage.GetRootLayer().ExportToString() == root_before
+
+
+class _RecordingInvoke:
+    """Stands in for the invokegraph verb and keeps the geometries it receives."""
+
+    def __init__(self):
+        self.geos = None
+
+    def setParms(self, parms):
+        pass
+
+    def executeAtTime(self, result, geos, time, add_time_dep):
+        self.geos = [geo.freeze() for geo in geos]
+
+
+def test_procedural_mixes_bind_pose_and_skinned_inputs(tmp_path, monkeypatch):
+    invoke = _RecordingInvoke()
+    verbs = dict(hou.sopNodeTypeCategory().nodeVerbs())
+    verbs["invokegraph"] = invoke
+    category = types.SimpleNamespace(nodeVerbs=lambda: verbs)
+    monkeypatch.setattr(igs.hou, "sopNodeTypeCategory", lambda: category)
+
+    graph_file = tmp_path / "graph.bgeo"
+    hou.Geometry().saveToFile(str(graph_file))
+
+    stage = _build_stage()
+    proc = UsdGeom.Xform.Define(stage, "/proc").GetPrim()
+    proc.CreateRelationship("bindpose:input_0").SetTargets(["/World/Char/Geo"])
+    proc.CreateRelationship("skinned:input_1").SetTargets(["/World/Char/Geo"])
+    args = {
+        "graph": str(graph_file),
+        "inputs": ["bindpose:input_0", "skinned:input_1 --skin"],
+    }
+    hou.setFrame(10)
+    igs.procedural(proc, args)
+
+    # geos = [graph, input_0, input_1, overrides]
+    bind_pose, skinned = invoke.geos[1], invoke.geos[2]
+    assert {p.attribValue("path") for p in bind_pose.prims()} == (
+        SKINNED_PRIMS | {"/World/Char/Geo/prop"})
+    assert set(_points_by_path(skinned)) == SKINNED_PRIMS
+    assert _points_by_path(skinned) == _expected_world_points(stage, 10)
+    bind_points = {_round(p.position()) for p in bind_pose.points()}
+    assert (6.0, 2.0, 0.0) in bind_points          # body corner at rest
+    assert (6.0, 2.0, 0.0) not in {
+        point for points in _points_by_path(skinned).values() for point in points}

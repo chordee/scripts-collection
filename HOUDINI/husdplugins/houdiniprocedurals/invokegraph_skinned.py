@@ -158,6 +158,10 @@ def __skinnedStage(stage, paths, frame):
     return skin_stage, bound
 
 def __keepPrims(geo, keep_paths):
+    # `path` comes from unpackusd, whose std:boundables traversal stops at the
+    # first boundable. A SkelRoot is boundable, so for an input at or above a
+    # SkelRoot this only resolves to the individual skinned prims because
+    # BakeSkinning rewrites SkelRoots to Xforms.
     path_attrib = geo.findPrimAttrib('path')
     if path_attrib is None:
         return
