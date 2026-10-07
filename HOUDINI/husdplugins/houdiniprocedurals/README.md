@@ -23,8 +23,60 @@ husk 透過 `husd/runprocedurals.py` 找出套用了 `HoudiniProceduralAPI` 的 
 ```
 
 - 沒有 `--skin` 的項目行為與原版完全相同，兩種可以混用。
-- `--skin` 寫在 relationship 名稱後面，不是寫在 prim 路徑上：relationship target 只能存純路徑，而 LOP 的 prim pattern 會把 `-` 解讀成排除語法。
+- `--skin` 只加在 `args['inputs']` 這份**字串清單**的項目上；procedural 會先切掉 flag，再用乾淨的名稱 `prim.GetRelationship()`。relationship 本身的名稱與 target 都不能動：名稱帶空白是不合法的屬性名，target 只能存純 prim 路徑（LOP 的 prim pattern 也會把 `-` 解讀成排除語法）。
 - 不認得的 flag（例如打錯成 `--skins`）會丟 `ValueError`，避免靜默退回 bind pose。
+
+### 使用方式
+
+procedural prim 上要改兩個屬性：
+
+| 屬性 | 原本 | 改成 |
+|---|---|---|
+| `houdini:procedural:path` | `invokegraph.py` | `invokegraph_skinned.py` |
+| `houdini:procedural:args` 的 `inputs` | `['guideprims:input_0', 'skinprims:input_1']` | 要走骨架驅動的項目加 ` --skin` |
+
+只改 args 不改 path 的話，husk 跑的仍是原版，會把 `'skinprims:input_1 --skin'` 整串當成 relationship 名稱而找不到。
+
+**自己寫的 procedural LOP**：在組 args 的地方加上 flag，relationship 照原名建立：
+
+```python
+for i, iname in enumerate(input_parms):
+    rel_name = '{}:input_{}'.format(iname, i)
+    rel = prim.CreateRelationship(rel_name)          # relationship 名稱維持乾淨
+    for path in input_prim_paths[iname]:
+        rel.AddTarget(path)
+    entry = rel_name
+    if node.evalParm('{}_skin'.format(iname)):       # 例：每個 input 一個 toggle
+        entry += ' --skin'
+    args['inputs'].append(entry)                     # 只有 args 裡的項目帶 flag
+```
+
+**SideFX 的 procedural LOP（例如 Houdini Hair Procedural）**：args 由 LOP 自行寫入，在其下游接一個 Python Script LOP 改寫：
+
+```python
+import ast
+from pxr import Sdf
+from husd import UsdHoudini
+
+PROC_PRIM = "/hairproc"        # 套了 procedural 的 prim
+SKIN_INPUTS = ["skinprims"]    # 要走骨架驅動的 input（relationship 名稱冒號前那段）
+
+stage = hou.pwd().editableStage()
+prim = stage.GetPrimAtPath(PROC_PRIM)
+for api in UsdHoudini.HoudiniProceduralAPI.GetAll(prim):
+    api.GetHoudiniProceduralPathAttr().Set(Sdf.AssetPath("invokegraph_skinned.py"))
+    args_attr = api.GetHoudiniProceduralArgsAttr()
+    args = ast.literal_eval(args_attr.Get(hou.frame()))
+    args["inputs"] = [
+        entry + " --skin"
+        if entry.split(":")[0] in SKIN_INPUTS and "--skin" not in entry.split()
+        else entry
+        for entry in args.get("inputs", [])
+    ]
+    args_attr.Set(repr(args))
+```
+
+relationship 名稱可在 Scene Graph Details 選取 procedural prim 查看。改完後 args 應該像 `'inputs': ['guideprims:input_0', 'skinprims:input_1 --skin']`。算圖機的 `HOUDINI_PATH` 也必須包含本 repo 的 `HOUDINI/`，husk 才找得到 `invokegraph_skinned.py`。
 
 ### `--skin` 的行為
 
