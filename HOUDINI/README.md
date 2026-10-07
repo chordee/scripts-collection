@@ -5,6 +5,7 @@
 | 子目錄 | 用途 |
 |---|---|
 | [`husdplugins/outputprocessors/`](husdplugins/outputprocessors/README.md) | Solaris USD ROP 自訂 output processor（portablereferences、projectrootvariable） |
+| [`husdplugins/houdiniprocedurals/`](husdplugins/houdiniprocedurals/README.md) | husk 算圖時執行的 Houdini procedural（invokegraph_skinned：input 可取骨架驅動後的模型） |
 | [`scripts/python/chd_toolkits/`](scripts/python/README.md) | Houdini 用 Python toolkit package（geometry/numpy 橋接、USD 查詢、COLMAP/Nerfstudio 匯入、USD Value Clips stitcher） |
 
 ## 安裝
@@ -74,10 +75,13 @@ HOUDINI/
 ├── README.md                       本檔
 ├── scripts-collection.json         範例 Houdini package JSON
 ├── husdplugins/
-│   └── outputprocessors/           Solaris USD output processors
-│       ├── README.md               功能與 API 說明
-│       ├── portablereferences.py
-│       └── projectrootvariable.py
+│   ├── outputprocessors/           Solaris USD output processors
+│   │   ├── README.md               功能與 API 說明
+│   │   ├── portablereferences.py
+│   │   └── projectrootvariable.py
+│   └── houdiniprocedurals/         husk 算圖時執行的 Houdini procedurals
+│       ├── README.md               功能與用法說明
+│       └── invokegraph_skinned.py
 └── scripts/
     └── python/                     Houdini 自動加入 PYTHONPATH
         ├── README.md               chd_toolkits API 說明
