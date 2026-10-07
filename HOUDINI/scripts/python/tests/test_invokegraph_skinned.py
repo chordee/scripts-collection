@@ -41,17 +41,20 @@ def _quad(offset):
             Gf.Vec3f(offset + 1, 2, 0), Gf.Vec3f(offset, 2, 0)]
 
 
-def _build_stage():
+def _build_stage(use_skel_root=True):
     """SkelRoot /World/Char whose arm joint turns 0 -> 90 degrees over frames 1-10.
 
     Under /World/Char/Geo: a skinned mesh with vertex normals, a skinned mesh
     with faceVarying normals and a blendshape (one level deeper), a rigidly
     bound mesh, and an explicitly unbound mesh. /World/Static sits outside the
     SkelRoot, and the animation source lives outside it at /Anims/Wave.
+    With ``use_skel_root=False`` /World/Char is a plain Xform; every binding
+    stays authored, but nothing is enclosed by a SkelRoot.
     """
     stage = Usd.Stage.CreateInMemory()
     UsdGeom.Xform.Define(stage, "/World")
-    root = UsdSkel.Root.Define(stage, "/World/Char")
+    root_type = UsdSkel.Root if use_skel_root else UsdGeom.Xform
+    root = root_type.Define(stage, "/World/Char")
     UsdGeom.Xformable(root).AddTranslateOp().Set(Gf.Vec3d(5, 0, 0))
 
     skel = UsdSkel.Skeleton.Define(stage, "/World/Char/Skel")
@@ -201,8 +204,12 @@ def test_parse_input_rejects_unknown_flag():
 def test_skinned_points_match_usdskel(paths, frame):
     stage = _build_stage()
     got = _points_by_path(_import_skinned(stage, paths, frame))
-    expected = _expected_world_points(stage, frame)
-    assert got
+    expected = {
+        path: points
+        for path, points in _expected_world_points(stage, frame).items()
+        if any(path == p or path.startswith(p + "/") for p in paths)
+    }
+    assert set(got) == set(expected)
     for path, points in got.items():
         assert points == expected[path], path
 
@@ -226,13 +233,16 @@ def test_normals_follow_the_skinning():
 
 
 def test_input_without_skel_root_yields_no_stage():
-    skin_stage, bound = skinned_stage(_build_stage(), ["/World/Static"], 10)
+    skin_stage, bound = skinned_stage(
+        _build_stage(use_skel_root=False), ["/World/Char/Geo/body"], 10)
     assert skin_stage is None
     assert bound == set()
 
 
 def test_render_stage_is_left_untouched():
     stage = _build_stage()
-    before = stage.GetSessionLayer().ExportToString()
+    session_before = stage.GetSessionLayer().ExportToString()
+    root_before = stage.GetRootLayer().ExportToString()
     _import_skinned(stage, ["/World/Char"], 5.5)
-    assert stage.GetSessionLayer().ExportToString() == before
+    assert stage.GetSessionLayer().ExportToString() == session_before
+    assert stage.GetRootLayer().ExportToString() == root_before
