@@ -1,7 +1,20 @@
+# Derived from Houdini 22.0.429's husdplugins/houdiniprocedurals/invokegraph.py.
+#
+# Adds an opt-in per-input `--skin` flag: an entry in args['inputs'] written as
+# 'skinprims:input_1 --skin' imports that input with UsdSkel skinning and
+# blendshapes evaluated at the render frame, instead of the bind pose the stock
+# procedural reads, and drops every prim under it that has no skeleton binding.
+# Entries without the flag behave exactly as in the stock procedural.
+
 import hou
 import husd
 
-from pxr import Sdf, Usd, UsdGeom, UsdRender
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdRender, UsdSkel
+
+SKIN_FLAG = '--skin'
+
+# SkelAnimation attributes that drive skinning and blendshapes.
+SKEL_ANIM_ATTRS = ('translations', 'rotations', 'scales', 'blendShapeWeights')
 
 def __getRenderInfo(stage, args, tc):
     cam_path = None
@@ -64,6 +77,93 @@ def __getRenderInfo(stage, args, tc):
         'resolution': resolution
     }
 
+def __parseInput(entry):
+    name, *flags = entry.split()
+    unknown = [flag for flag in flags if flag != SKIN_FLAG]
+    if unknown:
+        raise ValueError(
+            'Unknown flag(s) {} on input {!r}'.format(' '.join(unknown), entry))
+    return name, SKIN_FLAG in flags
+
+def __findSkelRoots(stage, paths):
+    roots = []
+    for path in paths:
+        prim = stage.GetPrimAtPath(path)
+        if not prim:
+            continue
+        root = UsdSkel.Root.Find(prim)
+        if root:
+            roots.append(root)
+            continue
+        it = iter(Usd.PrimRange(prim))
+        for descendant in it:
+            if descendant.IsA(UsdSkel.Root):
+                roots.append(UsdSkel.Root(descendant))
+                it.PruneChildren()
+    unique = {root.GetPath(): root for root in roots}
+    return list(unique.values())
+
+def __skinnedStage(stage, paths, frame):
+    """Bake skinning for the SkelRoots under `paths` at `frame`.
+
+    The bake goes into a masked copy of the stage whose own session layer
+    sublayers the original's, so the render stage is never modified.
+    Returns the copy and the paths of the prims that carry a skeleton binding.
+    """
+    roots = __findSkelRoots(stage, paths)
+    if not roots:
+        return None, set()
+
+    cache = UsdSkel.Cache()
+    bound = set()
+    mask_paths = set()
+    anim_paths = set()
+    for root in roots:
+        mask_paths.add(root.GetPath())
+        cache.Populate(root, Usd.PrimDefaultPredicate)
+        for binding in cache.ComputeSkelBindings(root, Usd.PrimDefaultPredicate):
+            skel = binding.GetSkeleton()
+            mask_paths.add(skel.GetPath())
+            anim_query = cache.GetSkelQuery(skel).GetAnimQuery()
+            if anim_query:
+                anim_paths.add(anim_query.GetPrim().GetPath())
+            for target in binding.GetSkinningTargets():
+                bound.add(target.GetPrim().GetPath().pathString)
+    mask_paths |= anim_paths
+
+    session = Sdf.Layer.CreateAnonymous('skinned-session')
+    session.subLayerPaths.append(stage.GetSessionLayer().identifier)
+    skin_stage = Usd.Stage.OpenMasked(
+        stage.GetRootLayer(), session, stage.GetPathResolverContext(),
+        Usd.StagePopulationMask(sorted(mask_paths)), Usd.Stage.LoadNone)
+    skin_stage.SetLoadRules(stage.GetLoadRules())
+    skin_stage.MuteAndUnmuteLayers(stage.GetMutedLayers(), [])
+    skin_stage.SetEditTarget(session)
+
+    # BakeSkinning only bakes at the time samples that fall inside its
+    # interval, so a frame between two animation samples (a motion blur
+    # subframe, or animation keyed on twos) would bake the rest pose.
+    # Pinning the interpolated animation at `frame` guarantees a sample there.
+    tc = Usd.TimeCode(frame)
+    for anim_path in anim_paths:
+        anim_prim = skin_stage.GetPrimAtPath(anim_path)
+        for name in SKEL_ANIM_ATTRS:
+            attr = anim_prim.GetAttribute(name)
+            if attr and attr.ValueMightBeTimeVarying():
+                attr.Set(attr.Get(tc), tc)
+
+    for root in roots:
+        UsdSkel.BakeSkinning(UsdSkel.Root(skin_stage.GetPrimAtPath(root.GetPath())),
+                             Gf.Interval(frame, frame))
+    return skin_stage, bound
+
+def __keepPrims(geo, keep_paths):
+    path_attrib = geo.findPrimAttrib('path')
+    if path_attrib is None:
+        return
+    geo.deletePrims([geoprim for geoprim in geo.prims()
+                     if geoprim.attribValue(path_attrib) not in keep_paths])
+
 def __proceduralAtFrame(prim, args, frame):
 
     tc = Usd.TimeCode(frame)
@@ -87,12 +187,20 @@ def __proceduralAtFrame(prim, args, frame):
             'output': 1
         })
         for input in args['inputs']:
+            input, skin = __parseInput(input)
             rel = prim.GetRelationship(input)
             paths = [s.pathString for s in rel.GetForwardedTargets()]
             geo = hou.Geometry()
             rule.setPathPattern(' '.join(paths))
-            geo.importUsdStage(stage, rule, purpose='guide default render', frame=frame)
-            unpack.execute(geo, [geo])
+            if skin:
+                skin_stage, bound = __skinnedStage(stage, paths, frame)
+                if skin_stage:
+                    geo.importUsdStage(skin_stage, rule, purpose='guide default render', frame=frame)
+                    unpack.execute(geo, [geo])
+                    __keepPrims(geo, bound)
+            else:
+                geo.importUsdStage(stage, rule, purpose='guide default render', frame=frame)
+                unpack.execute(geo, [geo])
             geos.append(geo)
 
     overrides = hou.Geometry()
