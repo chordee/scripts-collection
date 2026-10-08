@@ -24,7 +24,6 @@ from chd_toolkits.afanasy_submitter import (  # noqa: E402
     is_allowed_env_var,
     needs_short_path_expansion,
     to_forward_slashes,
-    to_native_slashes,
     resolve_rop_node,
     session_defaults,
     show,
@@ -534,21 +533,6 @@ class SubmitterJobTests(unittest.TestCase):
         # POSIX backslashes are legal filename characters, so leave them alone
         self.assertEqual(
             to_forward_slashes("/opt/a\\b", platform_name="posix"), "/opt/a\\b"
-        )
-
-    def test_to_native_slashes(self):
-        self.assertEqual(
-            to_native_slashes("C:/Program Files/Foo", platform_name="nt"),
-            "C:\\Program Files\\Foo",
-        )
-        # The os.pathsep separator itself is untouched
-        self.assertEqual(
-            to_native_slashes("C:/a;D:\\b", platform_name="nt"), "C:\\a;D:\\b"
-        )
-        # A backslash is a legal POSIX filename character, so this must not
-        # mirror the rewrite there.
-        self.assertEqual(
-            to_native_slashes("/opt/a/b", platform_name="posix"), "/opt/a/b"
         )
 
     def test_submit_job_normalizes_separators_and_omits_system_path(self):

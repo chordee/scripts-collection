@@ -75,35 +75,18 @@ def needs_short_path_expansion(name: str) -> bool:
     return upper_name.endswith("PATH") or upper_name in SHORT_PATH_ENV_NAMES
 
 
-# The system PATH is read by the Windows loader and by cmd.exe -- which is what
-# Afanasy runs the worker command through -- rather than by Houdini, so it is
-# normalized to native backslashes. Every other path list we touch is consumed
-# by Houdini, Arnold, or Python, all of which take forward slashes on Windows,
-# and Houdini authors HOUDINI_PATH that way itself.
-NATIVE_SEPARATOR_ENV_NAMES = frozenset({"PATH"})
-
-
 def to_forward_slashes(value: str, platform_name=os.name) -> str:
     """Rewrite Windows backslashes as forward slashes.
 
-    Path.resolve() hands back native separators, which would otherwise leave a
-    single value mixing both styles once one entry is expanded.
+    Every path list propagated is consumed by Houdini, Arnold, or Python, all
+    of which take forward slashes on Windows, and Houdini authors HOUDINI_PATH
+    that way itself. Path.resolve() hands back native separators, which would
+    otherwise leave a single value mixing both styles once one entry is
+    expanded.
     """
     if platform_name != "nt":
         return value
     return value.replace("\\", "/")
-
-
-def to_native_slashes(value: str, platform_name=os.name) -> str:
-    """Rewrite forward slashes as Windows backslashes.
-
-    Safe on Windows because "/" there is only ever a separator -- it is not a
-    legal filename character. On POSIX a backslash *is* legal in a filename, so
-    this is a no-op rather than the mirror rewrite.
-    """
-    if platform_name != "nt":
-        return value
-    return value.replace("/", "\\")
 
 
 def expand_short_paths(value: str, platform_name=os.name) -> str:
@@ -312,11 +295,7 @@ def submit_job(settings, hou_module, af_module, is_file=os.path.isfile):
             if is_allowed_env_var(env_key):
                 value = str(env_val)
                 if needs_short_path_expansion(env_key):
-                    value = expand_short_paths(value)
-                    if env_key.upper() in NATIVE_SEPARATOR_ENV_NAMES:
-                        value = to_native_slashes(value)
-                    else:
-                        value = to_forward_slashes(value)
+                    value = to_forward_slashes(expand_short_paths(value))
                 block.setEnv(env_key, value)
 
     job.blocks.append(block)
