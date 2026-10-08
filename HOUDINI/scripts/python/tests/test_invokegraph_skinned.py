@@ -262,15 +262,25 @@ class _RecordingInvoke:
         self.geos = [geo.freeze() for geo in geos]
 
 
-def test_procedural_mixes_bind_pose_and_skinned_inputs(tmp_path, monkeypatch):
+@pytest.fixture
+def stub_invoke(monkeypatch):
     invoke = _RecordingInvoke()
     verbs = dict(hou.sopNodeTypeCategory().nodeVerbs())
     verbs["invokegraph"] = invoke
     category = types.SimpleNamespace(nodeVerbs=lambda: verbs)
     monkeypatch.setattr(igs.hou, "sopNodeTypeCategory", lambda: category)
+    return invoke
 
-    graph_file = tmp_path / "graph.bgeo"
-    hou.Geometry().saveToFile(str(graph_file))
+
+@pytest.fixture
+def graph_file(tmp_path):
+    path = tmp_path / "graph.bgeo"
+    hou.Geometry().saveToFile(str(path))
+    return path
+
+
+def test_procedural_mixes_bind_pose_and_skinned_inputs(stub_invoke, graph_file):
+    invoke = stub_invoke
 
     stage = _build_stage()
     proc = UsdGeom.Xform.Define(stage, "/proc").GetPrim()
@@ -293,3 +303,27 @@ def test_procedural_mixes_bind_pose_and_skinned_inputs(tmp_path, monkeypatch):
     assert (6.0, 2.0, 0.0) in bind_points          # body corner at rest
     assert (6.0, 2.0, 0.0) not in {
         point for points in _points_by_path(skinned).values() for point in points}
+
+
+@pytest.mark.parametrize("version, returns_list", [
+    ((21, 0, 631), False),
+    ((22, 0, 429), True),
+])
+def test_procedural_return_type_follows_houdini_version(
+        stub_invoke, graph_file, monkeypatch, version, returns_list):
+    # Houdini 21's runprocedurals.py passes the return value straight to
+    # hou.lop.addLockedGeometry(); Houdini 22's expects [(frame, geo), ...].
+    monkeypatch.setattr(igs.hou, "applicationVersion", lambda: version)
+    stage = _build_stage()
+    proc = UsdGeom.Xform.Define(stage, "/proc").GetPrim()
+    proc.CreateRelationship("skinned:input_0").SetTargets(["/World/Char/Geo"])
+    hou.setFrame(10)
+
+    result = igs.procedural(
+        proc, {"graph": str(graph_file), "inputs": ["skinned:input_0 --skin"]})
+
+    if returns_list:
+        assert [(frame, type(geo)) for frame, geo in result] == [(10, hou.Geometry)]
+    else:
+        assert isinstance(result, hou.Geometry)
+    assert _points_by_path(stub_invoke.geos[1]) == _expected_world_points(stage, 10)

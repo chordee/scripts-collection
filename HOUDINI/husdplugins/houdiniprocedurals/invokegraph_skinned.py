@@ -300,6 +300,11 @@ def __proceduralAtFrame(prim, args, frame):
 def procedural(prim, args):
     result = []
     frame = hou.frame()
+    # Before Houdini 22, runprocedurals.py hands the return value straight to
+    # hou.lop.addLockedGeometry(), so it must be a single hou.Geometry and
+    # there is nowhere to put motion samples.
+    if hou.applicationVersion() < (22, 0, 0):
+        return __proceduralAtFrame(prim, args, frame)
     if prim.HasAPI('MotionAPI'):
         tc = Usd.TimeCode(frame)
         info = __getRenderInfo(prim.GetStage(), args, tc)
