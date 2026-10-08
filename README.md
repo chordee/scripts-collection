@@ -13,13 +13,16 @@
 - **MAYA/**
   Autodesk Maya 用的 Python 套件與 module 設定（含 USD utilities）。詳見 [`MAYA/README.md`](MAYA/README.md)。
 
+- **NUKE/**
+  Nuke 用的工具（Afanasy submitter）。詳見 [`NUKE/README.md`](NUKE/README.md)。
+
 ## 使用方式
 
 Clone 後依各 DCC 子目錄的 README 設定 search path 或 package。
 
 ## 相依
 
-- 各 DCC 對應版本（Houdini / Maya）
+- 各 DCC 對應版本（Houdini / Maya / Nuke）
 - Python（依各子目錄需求）
 
 ## License
