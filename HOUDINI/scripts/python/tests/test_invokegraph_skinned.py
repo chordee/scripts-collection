@@ -16,7 +16,7 @@ pytest.importorskip("hou")
 pytest.importorskip("pxr")
 
 import hou
-from pxr import Gf, Usd, UsdGeom, UsdSkel, Vt
+from pxr import Gf, Usd, UsdGeom, UsdRender, UsdSkel, Vt
 
 PROCEDURAL_FILE = (
     Path(__file__).resolve().parents[3]
@@ -124,7 +124,7 @@ def _round(vec):
     return tuple(round(c, 4) for c in vec)
 
 
-def _expected_world_points(stage, frame):
+def _expected_world_points(stage, frame, ordered=False):
     tc = Usd.TimeCode(frame)
     root = UsdSkel.Root(stage.GetPrimAtPath("/World/Char"))
     cache = UsdSkel.Cache()
@@ -152,7 +152,8 @@ def _expected_world_points(stage, frame):
             else:
                 skinning.ComputeSkinnedPoints(xforms, points, tc)
                 world = [skel_to_world.Transform(Gf.Vec3d(p)) for p in points]
-            expected[prim.GetPath().pathString] = sorted(_round(p) for p in world)
+            rounded = [_round(p) for p in world]
+            expected[prim.GetPath().pathString] = rounded if ordered else sorted(rounded)
     return expected
 
 
@@ -183,11 +184,16 @@ SKINNED_PRIMS = {
 
 
 def test_parse_input_without_flag():
-    assert parse_input("skinprims:input_1") == ("skinprims:input_1", False)
+    assert parse_input("skinprims:input_1") == ("skinprims:input_1", frozenset())
 
 
 def test_parse_input_with_skin_flag():
-    assert parse_input("skinprims:input_1 --skin") == ("skinprims:input_1", True)
+    assert parse_input("skinprims:input_1 --skin") == ("skinprims:input_1", {"--skin"})
+
+
+def test_parse_input_with_skin_and_velocity_flags():
+    assert parse_input("skinprims:input_1 --skin --velocity") == (
+        "skinprims:input_1", {"--skin", "--velocity"})
 
 
 def test_parse_input_rejects_unknown_flag():
@@ -327,3 +333,97 @@ def test_procedural_return_type_follows_houdini_version(
     else:
         assert isinstance(result, hou.Geometry)
     assert _points_by_path(stub_invoke.geos[1]) == _expected_world_points(stage, 10)
+
+
+def _add_render_camera(stage, shutter_open, shutter_close):
+    camera = UsdGeom.Camera.Define(stage, "/cam")
+    camera.CreateShutterOpenAttr(shutter_open)
+    camera.CreateShutterCloseAttr(shutter_close)
+    settings = UsdRender.Settings.Define(stage, "/Render/rs")
+    settings.CreateCameraRel().SetTargets(["/cam"])
+    settings.CreateResolutionAttr(Gf.Vec2i(64, 64))
+    stage.SetMetadata("renderSettingsPrimPath", "/Render/rs")
+
+
+def _run_procedural(stage, inputs, frame):
+    """Run the procedural with every input pointing at its path; return the input geos."""
+    proc = UsdGeom.Xform.Define(stage, "/proc").GetPrim()
+    entries = []
+    for i, (path, flags) in enumerate(inputs):
+        name = "in:input_{}".format(i)
+        proc.CreateRelationship(name).SetTargets([path])
+        entries.append(" ".join([name] + flags))
+    hou.setFrame(frame)
+    return entries, proc
+
+
+def _velocity_by_position(geo):
+    v_attrib = geo.findPointAttrib("v")
+    assert v_attrib is not None
+    return {_round(p.position()): p.attribValue(v_attrib) for p in geo.points()}
+
+
+def _expected_velocity_by_position(stage, frame, shutter_open, shutter_close):
+    seconds = (shutter_close - shutter_open) / stage.GetTimeCodesPerSecond()
+    now = _expected_world_points(stage, frame, ordered=True)
+    opened = _expected_world_points(stage, frame + shutter_open, ordered=True)
+    closed = _expected_world_points(stage, frame + shutter_close, ordered=True)
+    return {
+        p: tuple((bb - aa) / seconds for aa, bb in zip(a, b))
+        for path, points in now.items()
+        for p, a, b in zip(points, opened[path], closed[path])
+    }
+
+
+@pytest.mark.parametrize("camera_shutter", [None, (-0.5, 0.5)])
+def test_velocity_on_skinned_input(stub_invoke, graph_file, camera_shutter):
+    stage = _build_stage()
+    if camera_shutter:
+        _add_render_camera(stage, *camera_shutter)
+    shutter = camera_shutter or igs.DEFAULT_SHUTTER
+    entries, proc = _run_procedural(stage, [("/World/Char/Geo", ["--skin", "--velocity"])], 5.5)
+    igs.procedural(proc, {"graph": str(graph_file), "inputs": entries})
+
+    got = _velocity_by_position(stub_invoke.geos[1])
+    expected = _expected_velocity_by_position(stage, 5.5, *shutter)
+    assert set(got) == set(expected)
+    for position, velocity in got.items():
+        # float32 points over a 1/48 s shutter: allow for the amplified rounding.
+        assert velocity == pytest.approx(expected[position], abs=1e-2), position
+    assert any(abs(c) > 1.0 for velocity in got.values() for c in velocity)
+
+
+def test_velocity_without_skin_uses_time_sampled_points(stub_invoke, graph_file):
+    stage = Usd.Stage.CreateInMemory()
+    stage.SetTimeCodesPerSecond(24)
+    mesh = UsdGeom.Mesh.Define(stage, "/Mover")
+    mesh.CreatePointsAttr(_quad(0))
+    mesh.CreateFaceVertexCountsAttr([4])
+    mesh.CreateFaceVertexIndicesAttr([0, 1, 2, 3])
+    translate = UsdGeom.Xformable(mesh).AddTranslateOp()
+    translate.Set(Gf.Vec3d(0, 0, 0), 1)
+    translate.Set(Gf.Vec3d(24, 0, 0), 25)   # one unit per frame
+    entries, proc = _run_procedural(stage, [("/Mover", ["--velocity"])], 10)
+    igs.procedural(proc, {"graph": str(graph_file), "inputs": entries})
+
+    for velocity in _velocity_by_position(stub_invoke.geos[1]).values():
+        assert velocity == pytest.approx((24.0, 0.0, 0.0), abs=1e-3)
+
+
+def test_velocity_skipped_when_topology_changes(stub_invoke, graph_file, capsys):
+    stage = Usd.Stage.CreateInMemory()
+    mesh = UsdGeom.Mesh.Define(stage, "/Grower")
+    points, counts, indices = mesh.CreatePointsAttr(), mesh.CreateFaceVertexCountsAttr(),         mesh.CreateFaceVertexIndicesAttr()
+    # Three points up to 5.6, four after: shutter open (5.25) and close (5.75)
+    # see different point counts.
+    points.Set(_quad(0)[:3], 5.0)
+    counts.Set([3], 5.0)
+    indices.Set([0, 1, 2], 5.0)
+    points.Set(_quad(0), 5.6)
+    counts.Set([4], 5.6)
+    indices.Set([0, 1, 2, 3], 5.6)
+    entries, proc = _run_procedural(stage, [("/Grower", ["--velocity"])], 5.5)
+    igs.procedural(proc, {"graph": str(graph_file), "inputs": entries})
+
+    assert stub_invoke.geos[1].findPointAttrib("v") is None
+    assert "skipping --velocity" in capsys.readouterr().err
