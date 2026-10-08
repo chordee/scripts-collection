@@ -292,12 +292,12 @@ class ValidationTests(unittest.TestCase):
 
     def test_empty_write_limit_range(self):
         nuke = FakeNuke([FakeNode("Write1", limit=(20, 10))])
-        self.assertInvalid("range is empty", make_settings(), nuke)
+        self.assertInvalid("range is empty",
+                           make_settings(write_range_names=("Write1",)), nuke)
 
-    def test_write_limit_ignored_when_write_ranges_are_off(self):
+    def test_write_limit_ignored_when_the_write_uses_the_job_range(self):
         nuke = FakeNuke([FakeNode("Write1", limit=(20, 10))])
-        validate_settings(make_settings(use_write_ranges=False), nuke,
-                          is_file=lambda _: True)
+        validate_settings(make_settings(), nuke, is_file=lambda _: True)
 
 
 class CommandTests(unittest.TestCase):
@@ -327,7 +327,8 @@ class SubmitTests(unittest.TestCase):
     def test_submit_builds_one_block_per_write(self):
         nuke = make_nuke()
         settings = make_settings(write_names=("Write1", "Group1.WriteFG"), frame_step=2,
-                                 frames_per_task=5, capacity=500, priority=60)
+                                 frames_per_task=5, capacity=500, priority=60,
+                                 write_range_names=("Group1.WriteFG",))
         result = submit_job(settings, nuke, FakeAf, is_file=lambda _: True,
                             environ={"NUKE_PATH": "D:/t", "PATH": "C:/x"})
 
@@ -344,11 +345,18 @@ class SubmitTests(unittest.TestCase):
         self.assertIn("-X Group1.WriteFG", job.blocks[1].command)
         self.assertEqual(job.blocks[0].env, {"NUKE_PATH": "D:/t"})
 
-    def test_write_ranges_off_uses_the_job_range_for_every_block(self):
-        settings = make_settings(write_names=("Write1", "Group1.WriteFG"),
-                                 frame_start=5, frame_end=50, use_write_ranges=False)
-        submit_job(settings, make_nuke(), FakeAf, is_file=lambda _: True, environ={})
-        self.assertEqual([b.numeric[:2] for b in FakeAf.last_job.blocks], [(5, 50), (5, 50)])
+    def test_write_range_is_chosen_per_write(self):
+        nuke = FakeNuke([FakeNode("WriteA", limit=(10, 20)),
+                         FakeNode("WriteB", limit=(30, 40)),
+                         FakeNode("WriteC")])
+        settings = make_settings(write_names=("WriteA", "WriteB", "WriteC"),
+                                 frame_start=5, frame_end=50,
+                                 write_range_names=("WriteA", "WriteC"))
+        submit_job(settings, nuke, FakeAf, is_file=lambda _: True, environ={})
+        # WriteA uses its own range, WriteB was left on the job range, and
+        # WriteC has no Limit to Range so its option falls back to the job range.
+        self.assertEqual([b.numeric[:2] for b in FakeAf.last_job.blocks],
+                         [(10, 20), (5, 50), (5, 50)])
 
     def test_validation_failure_does_not_save(self):
         nuke = make_nuke()
@@ -375,7 +383,7 @@ class SessionDefaultsTests(unittest.TestCase):
         self.assertEqual(defaults["job_name"], "comp_v001")
         self.assertEqual(defaults["nuke_path"], os.path.normpath(FakeNuke.EXE_PATH))
         self.assertTrue(defaults["use_nukex"])
-        self.assertTrue(defaults["use_write_ranges"])
+        self.assertEqual(defaults["write_range_names"], ())
         self.assertEqual(defaults["write_names"], ("Write1",))
         self.assertEqual((defaults["frame_start"], defaults["frame_end"]), (1001, 1100))
 
@@ -396,26 +404,45 @@ class DialogTests(unittest.TestCase):
         QtWidgets, QtCore = _qt()
         return _create_dialog_class(QtWidgets, QtCore, nuke)()
 
-    def test_write_list_checks_the_defaults(self):
+    def column(self, dialog, column):
+        table = dialog.write_table
+        return [table.item(row, column) for row in range(table.rowCount())]
+
+    def test_write_table_defaults(self):
+        _, QtCore = _qt()
         dialog = self.make_dialog(make_nuke())
-        items = [dialog.write_list.item(i) for i in range(dialog.write_list.count())]
-        self.assertEqual([i.text() for i in items],
-                         ["Write1", "Write2  (disabled)", "Group1.WriteFG  [10-20]"])
+        self.assertEqual([i.text() for i in self.column(dialog, 0)],
+                         ["Write1", "Write2  (disabled)", "Group1.WriteFG"])
         self.assertEqual(dialog._checked_write_names(), ("Write1", "Group1.WriteFG"))
+        # Only the Write with Limit to Range can use its own range, and does by default.
+        options = self.column(dialog, 1)
+        editable = QtCore.Qt.ItemFlag.ItemIsUserCheckable
+        self.assertEqual([bool(i.flags() & editable) for i in options], [False, False, True])
+        self.assertEqual(dialog._write_range_names(), ("Group1.WriteFG",))
+        self.assertEqual([i.text() for i in self.column(dialog, 2)],
+                         ["1-100", "1-100", "10-20"])
+
+    def test_range_column_follows_the_option_and_the_job_range(self):
+        _, QtCore = _qt()
+        dialog = self.make_dialog(make_nuke())
+        self.column(dialog, 1)[2].setCheckState(QtCore.Qt.CheckState.Unchecked)
+        self.assertEqual(self.column(dialog, 2)[2].text(), "1-100")
+        dialog.frame_end_spin.setValue(48)
+        self.assertEqual([i.text() for i in self.column(dialog, 2)],
+                         ["1-48", "1-48", "1-48"])
 
     def test_settings_from_fields(self):
         _, QtCore = _qt()
         dialog = self.make_dialog(make_nuke())
-        dialog.write_list.item(0).setCheckState(QtCore.Qt.CheckState.Unchecked)
+        self.column(dialog, 0)[0].setCheckState(QtCore.Qt.CheckState.Unchecked)
+        self.column(dialog, 1)[2].setCheckState(QtCore.Qt.CheckState.Unchecked)
         dialog.nukex_checkbox.setChecked(True)
         dialog.frame_step_spin.setValue(3)
-        self.assertTrue(dialog.write_ranges_checkbox.isChecked())
-        dialog.write_ranges_checkbox.setChecked(False)
         settings = dialog._settings_from_fields()
         self.assertEqual(settings.write_names, ("Group1.WriteFG",))
+        self.assertEqual(settings.write_range_names, ())
         self.assertTrue(settings.use_nukex)
         self.assertEqual(settings.frame_step, 3)
-        self.assertFalse(settings.use_write_ranges)
 
     def test_submit_reports_validation_errors(self):
         nuke = make_nuke()

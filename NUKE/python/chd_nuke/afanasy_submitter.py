@@ -22,7 +22,9 @@ class SubmissionSettings:
     capacity: int = 800
     priority: int = 80
     use_nukex: bool = False
-    use_write_ranges: bool = True
+    # Writes whose block renders the Write's own Limit to Range instead of
+    # Frame Start - Frame End.
+    write_range_names: tuple = ()
 
 
 AFANASY_SERVICE = "nuke"
@@ -159,8 +161,8 @@ def write_frame_range(node, frame_start, frame_end):
 
 
 def block_frame_range(settings, node):
-    """The range a Write's block renders, honouring ``use_write_ranges``."""
-    if settings.use_write_ranges:
+    """The range a Write's block renders, honouring ``write_range_names``."""
+    if node.fullName() in settings.write_range_names:
         return write_frame_range(node, settings.frame_start, settings.frame_end)
     return settings.frame_start, settings.frame_end
 
@@ -247,8 +249,10 @@ def session_defaults(nuke_module):
         "job_name": os.path.splitext(os.path.basename(script_path))[0],
         "nuke_path": os.path.normpath(nuke_module.EXE_PATH),
         "use_nukex": bool(nuke_module.env.get("nukex")),
-        "use_write_ranges": True,
         "write_names": default_write_names(nuke_module),
+        "write_range_names": tuple(
+            node.fullName() for node in list_write_nodes(nuke_module) if limit_range(node)
+        ),
         "frame_start": int(root["first_frame"].value()),
         "frame_end": int(root["last_frame"].value()),
         "frame_step": 1,
@@ -270,11 +274,13 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
     unchecked = QtCore.Qt.CheckState.Unchecked
     user_checkable = QtCore.Qt.ItemFlag.ItemIsUserCheckable
     enabled_flag = QtCore.Qt.ItemFlag.ItemIsEnabled
+    name_role = QtCore.Qt.ItemDataRole.UserRole
+    submit_column, range_option_column, range_column = 0, 1, 2
 
     class AfanasySubmitterDialog(QtWidgets.QWidget):
         def __init__(self, parent=None):
             super().__init__(parent)
-            self.resize(420, 480)
+            self.resize(520, 520)
             self.setWindowTitle("Afanasy Submitter")
             defaults = session_defaults(nuke_module)
 
@@ -282,27 +288,6 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
             self.nuke_edit = QtWidgets.QLineEdit(defaults["nuke_path"])
             self.nukex_checkbox = QtWidgets.QCheckBox("NukeX (--nukex)")
             self.nukex_checkbox.setChecked(defaults["use_nukex"])
-            self.write_ranges_checkbox = QtWidgets.QCheckBox("Use Write node frame range")
-            self.write_ranges_checkbox.setToolTip(
-                "Writes with Limit to Range render their own range; "
-                "unchecked, every Write renders Frame Start - Frame End.")
-            self.write_ranges_checkbox.setChecked(defaults["use_write_ranges"])
-
-            self.write_list = QtWidgets.QListWidget()
-            default_names = set(defaults["write_names"])
-            for node in list_write_nodes(nuke_module):
-                name = node.fullName()
-                label = name
-                limit = limit_range(node)
-                if limit:
-                    label += "  [{}-{}]".format(*limit)
-                if is_disabled(node):
-                    label += "  (disabled)"
-                item = QtWidgets.QListWidgetItem(label)
-                item.setData(QtCore.Qt.ItemDataRole.UserRole, name)
-                item.setFlags(user_checkable | enabled_flag)
-                item.setCheckState(checked if name in default_names else unchecked)
-                self.write_list.addItem(item)
 
             self.frame_start_spin = self._spin(-1_000_000, 1_000_000, defaults["frame_start"])
             self.frame_end_spin = self._spin(-1_000_000, 1_000_000, defaults["frame_end"])
@@ -310,6 +295,13 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
             self.frames_per_task_spin = self._spin(1, 1_000_000, defaults["frames_per_task"])
             self.capacity_spin = self._spin(1, 1_000_000, defaults["capacity"])
             self.priority_spin = self._spin(0, 1_000_000, defaults["priority"])
+
+            self._limits = {}
+            self.write_table = self._build_write_table(
+                set(defaults["write_names"]), set(defaults["write_range_names"]))
+            self.write_table.itemChanged.connect(self._refresh_ranges)
+            self.frame_start_spin.valueChanged.connect(self._refresh_ranges)
+            self.frame_end_spin.valueChanged.connect(self._refresh_ranges)
 
             nuke_button = QtWidgets.QPushButton("Browse")
             self.submit_button = QtWidgets.QPushButton("Submit")
@@ -320,8 +312,7 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
             form.addRow("Job Name", self.job_name_edit)
             form.addRow("Nuke", self._path_row(self.nuke_edit, nuke_button))
             form.addRow(self.nukex_checkbox)
-            form.addRow(self.write_ranges_checkbox)
-            form.addRow("Write Nodes", self.write_list)
+            form.addRow("Write Nodes", self.write_table)
             form.addRow("Frame Start", self.frame_start_spin)
             form.addRow("Frame End", self.frame_end_spin)
             form.addRow("Frame Step", self.frame_step_spin)
@@ -329,6 +320,56 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
             form.addRow("Capacity", self.capacity_spin)
             form.addRow("Job Priority", self.priority_spin)
             form.addRow(self.submit_button)
+
+        def _build_write_table(self, submit_names, range_names):
+            writes = list_write_nodes(nuke_module)
+            table = QtWidgets.QTableWidget(len(writes), 3)
+            table.setHorizontalHeaderLabels(["Write", "Use Write Range", "Range"])
+            table.verticalHeader().setVisible(False)
+            table.horizontalHeader().setStretchLastSection(True)
+            for row, node in enumerate(writes):
+                name = node.fullName()
+                limit = limit_range(node)
+                self._limits[name] = limit
+
+                label = f"{name}  (disabled)" if is_disabled(node) else name
+                submit_item = QtWidgets.QTableWidgetItem(label)
+                submit_item.setData(name_role, name)
+                submit_item.setFlags(user_checkable | enabled_flag)
+                submit_item.setCheckState(checked if name in submit_names else unchecked)
+                table.setItem(row, submit_column, submit_item)
+
+                # Only a Write with Limit to Range has a range of its own.
+                option_item = QtWidgets.QTableWidgetItem()
+                if limit:
+                    option_item.setFlags(user_checkable | enabled_flag)
+                    option_item.setCheckState(checked if name in range_names else unchecked)
+                else:
+                    option_item.setFlags(QtCore.Qt.ItemFlag.NoItemFlags)
+                    option_item.setToolTip("Limit to Range is off on this Write.")
+                table.setItem(row, range_option_column, option_item)
+
+                range_item = QtWidgets.QTableWidgetItem()
+                range_item.setFlags(enabled_flag)
+                table.setItem(row, range_column, range_item)
+            self._fill_ranges(table)
+            table.resizeColumnsToContents()
+            return table
+
+        def _fill_ranges(self, table):
+            job_range = (self.frame_start_spin.value(), self.frame_end_spin.value())
+            for row in range(table.rowCount()):
+                name = table.item(row, submit_column).data(name_role)
+                use_own = table.item(row, range_option_column).checkState() == checked
+                start, end = self._limits[name] if use_own else job_range
+                table.item(row, range_column).setText(f"{start}-{end}")
+
+        def _refresh_ranges(self, *_):
+            self.write_table.blockSignals(True)
+            try:
+                self._fill_ranges(self.write_table)
+            finally:
+                self.write_table.blockSignals(False)
 
         @staticmethod
         def _spin(minimum, maximum, value):
@@ -353,13 +394,18 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
             if path:
                 self.nuke_edit.setText(path)
 
+        def _names_checked_in(self, column):
+            return tuple(
+                self.write_table.item(row, submit_column).data(name_role)
+                for row in range(self.write_table.rowCount())
+                if self.write_table.item(row, column).checkState() == checked
+            )
+
         def _checked_write_names(self):
-            names = []
-            for row in range(self.write_list.count()):
-                item = self.write_list.item(row)
-                if item.checkState() == checked:
-                    names.append(item.data(QtCore.Qt.ItemDataRole.UserRole))
-            return tuple(names)
+            return self._names_checked_in(submit_column)
+
+        def _write_range_names(self):
+            return self._names_checked_in(range_option_column)
 
         def _settings_from_fields(self):
             return SubmissionSettings(
@@ -373,7 +419,7 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
                 capacity=self.capacity_spin.value(),
                 priority=self.priority_spin.value(),
                 use_nukex=self.nukex_checkbox.isChecked(),
-                use_write_ranges=self.write_ranges_checkbox.isChecked(),
+                write_range_names=self._write_range_names(),
             )
 
         def _on_submit(self):
