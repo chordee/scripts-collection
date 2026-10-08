@@ -195,8 +195,9 @@ class EnvironmentTests(unittest.TestCase):
         for name in ("NUKE_R_2026_0218", "NUKE_TEMP_DIR", "FN_ENT_DISABLE_SYSTEM_LOCK"):
             self.assertFalse(is_allowed_env_var(name), name)
 
-    def test_license_server_is_left_to_the_farm(self):
-        self.assertFalse(is_allowed_env_var("foundry_LICENSE"))
+    def test_license_servers_are_left_to_the_farm(self):
+        for name in ("foundry_LICENSE", "JOB_LICENSE_SERVER", "REZ_LICENSE"):
+            self.assertFalse(is_allowed_env_var(name), name)
 
     def test_sensitive_names_are_never_sent(self):
         for name in ("JOB_API_KEY", "CGRU_TOKEN", "JOB_PASSWORD", "CGRU_SECRET",

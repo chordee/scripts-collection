@@ -47,7 +47,7 @@ NUKE_PATH=<path-to-repo>/NUKE
 
 - 名稱：`NUKE_PATH`、`PYTHONPATH`、`OFX_PLUGIN_PATH`、`OCIO`（不分大小寫）
 - 前綴：`CGRU_`、`RP_`、`PUB_`、`JOB_`、`AXIOM_`、`REZ_`
-- 一律排除：名稱含 `KEY`、`TOKEN`、`PASSWORD`、`PASS`、`SECRET`、`PASSWD`、`PWD`、`CREDENTIAL`、`AUTH` 的變數
+- 一律排除：名稱含 `KEY`、`TOKEN`、`PASSWORD`、`PASS`、`SECRET`、`PASSWD`、`PWD`、`CREDENTIAL`、`AUTH`、`LICENSE` 的變數
 
 刻意不送的：
 
@@ -55,7 +55,7 @@ NUKE_PATH=<path-to-repo>/NUKE
 |---|---|
 | `PATH` | 會蓋掉 worker 自己的 `PATH`，Windows 找 DLL 也靠它 |
 | `NUKE_*` / `FN_*` 前綴 | 執行中的 Nuke 會自行加入 `NUKE_R_<build 日期>`（一長串授權雜湊）、`NUKE_TEMP_DIR`（本機暫存路徑）、`FN_ENT_*` 等，不屬於其他機器 |
-| `foundry_LICENSE` | 授權伺服器交給 farm 自行設定；本機自架授權時其值是 `5053@localhost` |
+| 名稱含 `LICENSE` 的變數（如 `foundry_LICENSE`） | 授權伺服器交給 farm 自行設定；本機自架授權時其值是 `5053@localhost` |
 
 路徑類變數（名稱以 `PATH` 結尾，以及 `OCIO`）會展開 Windows 8.3 短路徑並統一為正斜線。
 

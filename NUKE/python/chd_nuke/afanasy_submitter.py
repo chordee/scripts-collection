@@ -35,9 +35,7 @@ WRITE_CLASS = "Write"
 # Nuke-specific variables are listed by name, never by a NUKE_ / FN_ prefix:
 # a running Nuke adds its own to the process environment -- a long license
 # hash (NUKE_R_<build date>), NUKE_TEMP_DIR pointing at this workstation's temp
-# folder, FN_ENT_* flags -- none of which belong on another machine. The
-# license server (foundry_LICENSE) is left to the farm too: a workstation
-# serving its own licenses has it set to 5053@localhost.
+# folder, FN_ENT_* flags -- none of which belong on another machine.
 ALLOWED_ENV_NAMES = frozenset({"NUKE_PATH", "PYTHONPATH", "OFX_PLUGIN_PATH", "OCIO"})
 ALLOWED_ENV_PREFIXES = (
     "CGRU_",
@@ -57,6 +55,9 @@ DISALLOWED_ENV_SUBSTRINGS = (
     "PWD",
     "CREDENTIAL",
     "AUTH",
+    # License servers are the farm's to configure: a workstation serving its
+    # own licenses has foundry_LICENSE set to 5053@localhost.
+    "LICENSE",
 )
 
 

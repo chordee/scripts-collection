@@ -27,7 +27,8 @@ class SubmissionSettings:
 # holding Arnold's ai.dll, which Windows locates through the DLL search path.
 # The worker's environment is the farm's to configure.
 ALLOWED_ENV_NAMES = frozenset(
-    {"PYTHONPATH", "SIDEFXLABS", "HOUDINI_PATH", "HOUDINI_CGRU_PATH"}
+    {"PYTHONPATH", "SIDEFXLABS", "HOUDINI_PATH", "HOUDINI_OTLSCAN_PATH",
+     "HOUDINI_CGRU_PATH"}
 )
 ALLOWED_ENV_PREFIXES = (
     "CGRU_",
@@ -36,14 +37,15 @@ ALLOWED_ENV_PREFIXES = (
     "JOB_",
     "AXIOM_",
     "REZ_",
-    # HTOA (Arnold for Houdini): HTOA/HTOA_* point at the plugin install,
-    # ARNOLD_* at the renderer and its license server, and SOLIDANGLE_LICENSE
-    # is the license var itself (authored as "solidangle_LICENSE" — Windows
-    # upper-cases os.environ keys, hence the case-insensitive match below).
+    # HTOA (Arnold for Houdini): HTOA/HTOA_* point at the plugin install and
+    # ARNOLD_* at the renderer. Windows upper-cases os.environ keys, hence the
+    # case-insensitive match below.
     "HTOA",
     "ARNOLD_",
-    "SOLIDANGLE_",
 )
+# LICENSE: license servers are the farm's to configure -- a workstation serving
+# its own licenses has them set to <port>@localhost, which on a worker would
+# point back at the worker itself.
 DISALLOWED_ENV_SUBSTRINGS = (
     "KEY",
     "TOKEN",
@@ -54,6 +56,7 @@ DISALLOWED_ENV_SUBSTRINGS = (
     "PWD",
     "CREDENTIAL",
     "AUTH",
+    "LICENSE",
 )
 
 

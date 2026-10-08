@@ -465,6 +465,8 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertTrue(is_allowed_env_var("SIDEFXLABS"))
         self.assertTrue(is_allowed_env_var("HOUDINI_PATH"))
         self.assertTrue(is_allowed_env_var("HOUDINI_CGRU_PATH"))
+        self.assertTrue(is_allowed_env_var("HOUDINI_OTLSCAN_PATH"))
+        self.assertTrue(needs_short_path_expansion("HOUDINI_OTLSCAN_PATH"))
         self.assertTrue(is_allowed_env_var("CGRU_LOCATION"))
         self.assertTrue(is_allowed_env_var("RP_PROJECT"))
         self.assertTrue(is_allowed_env_var("PUB_VERSION"))
@@ -475,11 +477,18 @@ class SubmitterJobTests(unittest.TestCase):
         self.assertTrue(is_allowed_env_var("HTOA_PATH"))
         self.assertTrue(is_allowed_env_var("ARNOLD_ROOT"))
         self.assertTrue(is_allowed_env_var("ARNOLD_PLUGIN_PATH"))
-        self.assertTrue(is_allowed_env_var("ARNOLD_LICENSE_ORDER"))
-        self.assertTrue(is_allowed_env_var("SOLIDANGLE_LICENSE"))
         # Windows upper-cases os.environ keys, but a POSIX submitter sees the
         # var under its authored mixed-case spelling.
-        self.assertTrue(is_allowed_env_var("solidangle_LICENSE"))
+        self.assertTrue(is_allowed_env_var("htoa_path"))
+        # License servers are left to the farm, whatever the prefix.
+        self.assertFalse(is_allowed_env_var("SOLIDANGLE_LICENSE"))
+        self.assertFalse(is_allowed_env_var("solidangle_LICENSE"))
+        self.assertFalse(is_allowed_env_var("ARNOLD_LICENSE_ORDER"))
+        self.assertFalse(is_allowed_env_var("ADSKFLEX_LICENSE_FILE"))
+        # Variables a running Houdini adds to its own process are not sent.
+        for name in ("HOUDINI_USER_PREF_DIR", "HOUDINI_TEMP_DIR", "HOUDINI_VERSION",
+                     "HOUDINI_USD_DSO_PATH", "HOUDINI_HQUEUE_SERVER", "HFS"):
+            self.assertFalse(is_allowed_env_var(name), name)
         self.assertFalse(is_allowed_env_var("PASSWORD"))
         self.assertFalse(is_allowed_env_var("SECRET_KEY"))
         self.assertFalse(is_allowed_env_var("FOO_VAR"))
@@ -632,7 +641,7 @@ class SubmitterJobTests(unittest.TestCase):
         hou_module.hipFile = FakeHipFileWithSave()
         test_env = {
             "JOB_NAME": "shot~1",
-            "SOLIDANGLE_LICENSE": "5053@localhost",
+            "PUB_TAG": "v~1",
             "ARNOLD_ROOT": "D:/Programs/Arnold-7.0.0.2-windows",
         }
         with mock.patch.dict(os.environ, test_env, clear=True):
