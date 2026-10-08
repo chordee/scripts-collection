@@ -5,6 +5,12 @@
 # blendshapes evaluated at the render frame, instead of the bind pose the stock
 # procedural reads, and drops every prim under it that has no skeleton binding.
 # Entries without the flag behave exactly as in the stock procedural.
+#
+# A `--velocity` flag on an entry adds a point `v` attribute to that input,
+# measured across the camera shutter, so the graph can transfer it onto what it
+# generates. It combines with `--skin`.
+
+import sys
 
 import hou
 import husd
@@ -12,6 +18,11 @@ import husd
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdRender, UsdSkel
 
 SKIN_FLAG = '--skin'
+VELOCITY_FLAG = '--velocity'
+INPUT_FLAGS = frozenset({SKIN_FLAG, VELOCITY_FLAG})
+
+# Shutter used for --velocity when the render camera has none.
+DEFAULT_SHUTTER = (-0.25, 0.25)
 
 # SkelAnimation attributes that drive skinning and blendshapes.
 SKEL_ANIM_ATTRS = ('translations', 'rotations', 'scales', 'blendShapeWeights')
@@ -79,11 +90,11 @@ def __getRenderInfo(stage, args, tc):
 
 def __parseInput(entry):
     name, *flags = entry.split()
-    unknown = [flag for flag in flags if flag != SKIN_FLAG]
+    unknown = [flag for flag in flags if flag not in INPUT_FLAGS]
     if unknown:
         raise ValueError(
             'Unknown flag(s) {} on input {!r}'.format(' '.join(unknown), entry))
-    return name, SKIN_FLAG in flags
+    return name, frozenset(flags)
 
 def __findSkelRoots(stage, paths):
     roots = []
@@ -168,6 +179,38 @@ def __keepPrims(geo, keep_paths):
     geo.deletePrims([geoprim for geoprim in geo.prims()
                      if geoprim.attribValue(path_attrib) not in keep_paths])
 
+def __importInput(stage, rule, paths, frame, skin, unpack):
+    geo = hou.Geometry()
+    if skin:
+        skin_stage, bound = __skinnedStage(stage, paths, frame)
+        if skin_stage:
+            geo.importUsdStage(skin_stage, rule, purpose='guide default render', frame=frame)
+            unpack.execute(geo, [geo])
+            __keepPrims(geo, bound)
+    else:
+        geo.importUsdStage(stage, rule, purpose='guide default render', frame=frame)
+        unpack.execute(geo, [geo])
+    return geo
+
+def __shutterInterval(stage, args, tc):
+    camera = __getRenderInfo(stage, args, tc).get('camera', {})
+    shutter_open = camera.get('shutterOpen')
+    shutter_close = camera.get('shutterClose')
+    if shutter_open is None or shutter_close is None or shutter_close <= shutter_open:
+        return DEFAULT_SHUTTER
+    return shutter_open, shutter_close
+
+def __addVelocity(geo, opened, closed, seconds, label):
+    """Write `v` onto `geo` from the same points at shutter open and close."""
+    if not (len(opened.points()) == len(closed.points()) == len(geo.points())):
+        print('invokegraph_skinned: {}: point count changes across the shutter, '
+              'skipping --velocity'.format(label), file=sys.stderr)
+        return
+    p0 = opened.pointFloatAttribValues('P')
+    p1 = closed.pointFloatAttribValues('P')
+    geo.addAttrib(hou.attribType.Point, 'v', (0.0, 0.0, 0.0))
+    geo.setPointFloatAttribValues('v', [(b - a) / seconds for a, b in zip(p0, p1)])
+
 def __proceduralAtFrame(prim, args, frame):
 
     tc = Usd.TimeCode(frame)
@@ -191,20 +234,18 @@ def __proceduralAtFrame(prim, args, frame):
             'output': 1
         })
         for input in args['inputs']:
-            input, skin = __parseInput(input)
+            input, flags = __parseInput(input)
+            skin = SKIN_FLAG in flags
             rel = prim.GetRelationship(input)
             paths = [s.pathString for s in rel.GetForwardedTargets()]
-            geo = hou.Geometry()
             rule.setPathPattern(' '.join(paths))
-            if skin:
-                skin_stage, bound = __skinnedStage(stage, paths, frame)
-                if skin_stage:
-                    geo.importUsdStage(skin_stage, rule, purpose='guide default render', frame=frame)
-                    unpack.execute(geo, [geo])
-                    __keepPrims(geo, bound)
-            else:
-                geo.importUsdStage(stage, rule, purpose='guide default render', frame=frame)
-                unpack.execute(geo, [geo])
+            geo = __importInput(stage, rule, paths, frame, skin, unpack)
+            if VELOCITY_FLAG in flags:
+                shutter_open, shutter_close = __shutterInterval(stage, args, tc)
+                opened = __importInput(stage, rule, paths, frame + shutter_open, skin, unpack)
+                closed = __importInput(stage, rule, paths, frame + shutter_close, skin, unpack)
+                seconds = (shutter_close - shutter_open) / stage.GetTimeCodesPerSecond()
+                __addVelocity(geo, opened, closed, seconds, input)
             geos.append(geo)
 
     overrides = hou.Geometry()
@@ -300,6 +341,11 @@ def __proceduralAtFrame(prim, args, frame):
 def procedural(prim, args):
     result = []
     frame = hou.frame()
+    # Before Houdini 22, runprocedurals.py hands the return value straight to
+    # hou.lop.addLockedGeometry(), so it must be a single hou.Geometry and
+    # there is nowhere to put motion samples.
+    if hou.applicationVersion() < (22, 0, 0):
+        return __proceduralAtFrame(prim, args, frame)
     if prim.HasAPI('MotionAPI'):
         tc = Usd.TimeCode(frame)
         info = __getRenderInfo(prim.GetStage(), args, tc)

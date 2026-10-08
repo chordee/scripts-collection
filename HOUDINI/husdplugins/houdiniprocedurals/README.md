@@ -26,6 +26,20 @@ husk 透過 `husd/runprocedurals.py` 找出套用了 `HoudiniProceduralAPI` 的 
 - `--skin` 只加在 `args['inputs']` 這份**字串清單**的項目上；procedural 會先切掉 flag，再用乾淨的名稱 `prim.GetRelationship()`。relationship 本身的名稱與 target 都不能動：名稱帶空白是不合法的屬性名，target 只能存純 prim 路徑（LOP 的 prim pattern 也會把 `-` 解讀成排除語法）。
 - 不認得的 flag（例如打錯成 `--skins`）會丟 `ValueError`，避免靜默退回 bind pose。
 
+### `--velocity`：替 input 加上速度
+
+在項目後加 `--velocity`，該 input 會多一個 point 屬性 `v`（單位：每秒），讓 graph 以 attribute transfer 等方式傳給它產生的幾何（例如毛髮），最終輸出帶 `v` 即可走 velocity motion blur。可與 `--skin` 併用：
+
+```python
+'inputs': ['guideprims:input_0', 'skinprims:input_1 --skin --velocity']
+```
+
+- 速度取自 render camera 的 shutter：在 shutter open 與 close 各匯入一次該 input，以點位差除以時間差。相機取不到 shutter 時改用當格 ±0.25 格。
+- 不加 `--skin` 也能用，適用於本身點位或 transform 有時間樣本的一般動畫 mesh。
+- 兩個時間點的點數不同（拓樸改變）時不寫 `v`，並在 stderr 印出警告，不中斷算圖。
+- 每個帶 `--velocity` 的 input 會多匯入兩次（帶 `--skin` 時也多烘焙兩次）。
+- 輸出的 `v` 會轉成 USD 的 `velocities`，但 Karma 預設不使用：需在輸出 prim（或其上層）設 `karma:object:vblur` 為 1（Render Geometry Settings 的 Velocity Blur），例如 `primvars:karma:object:vblur = 1`。
+
 ### 使用方式
 
 procedural prim 上要改兩個屬性：
@@ -86,9 +100,22 @@ relationship 名稱可在 Scene Graph Details 選取 procedural prim 查看。�
 - 烘焙在一個遮罩過的 stage 副本上進行，該副本的 session layer 再 sublayer 原本的 session layer，**算圖用的 stage 不會被修改**。
 - `BakeSkinning` 只在動畫有 time sample 的時間點烘焙，所以會先把 SkelAnimation 在當格的內插值釘成一個 time sample，子幀與一拍二的動畫才不會拿到 rest pose。
 
+### husk 設定
+
+husk 預設 `--allowed-procedurals basic`，會以 `--validategeo` 執行 procedural，只接受 SideFX 簽章過的檔案；本檔會以 `RuntimeError: Checksum for procedural ... is not in the approved list.` 被拒絕。算圖時（含 farm 的 husk 指令）必須加上 `--allowed-procedurals all`（依 husk 說明，此模式可能需要 Houdini Engine 授權）。
+
+### Houdini 版本差異
+
+| | Houdini 22 | Houdini 21 |
+|---|---|---|
+| `procedural()` 回傳 | `[(frame, hou.Geometry), ...]` | 單一 `hou.Geometry` |
+| 多樣本 deformation motion blur | 有（procedural prim 套 `MotionAPI` 且 `motion:nonlinearSampleCount` > 1，相機需有 shutter） | 無 |
+| `--velocity`（velocity motion blur） | 有 | 有 |
+
+Houdini 21 的 `runprocedurals.py` 把回傳值直接交給 `hou.lop.addLockedGeometry()`，沒有時間樣本的概念，原版 `invokegraph.py` 在 H21 也沒有 motion blur；本檔依 `hou.applicationVersion()` 切換回傳格式。`--skin` 在兩個版本都會取當格驅動後的模型；H21 需要 motion blur 時改用 `--velocity`。
+
 ### 已知限制
 
-- husk 帶 `--validategeo` 時，`runprocedurals.py` 只接受 SideFX 簽章過的 procedural 檔案，本檔會被拒絕。
 - 位於 instance 底下的 skinned prim（instance proxy）無法被 `BakeSkinning` 寫入，未驗證。
 - 每個帶 `--skin` 的 input 在每個時間樣本都會開一次遮罩 stage 並烘焙，角色越多成本越高。
 - 原版 `overrides` 取 primvar 值時用的是 `hou.frame()` 而非該時間樣本，motion blur 各樣本會拿到相同參數；這是原版行為，此處未更動。
