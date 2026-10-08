@@ -5,7 +5,7 @@
 | 檔案 | 用途 |
 |---|---|
 | `init.py` | 把 `python/` 加進 Nuke 的 plugin path 與 `sys.path` |
-| `menu.py` | 在 Nuke 選單加入 **CHD › Afanasy Submitter** |
+| `menu.py` | 在 Nuke 選單加入 **Render › Afanasy Submitter** |
 | `python/chd_nuke/afanasy_submitter.py` | 把目前 script 的 Write node 送到 Afanasy |
 
 ## 安裝
@@ -16,7 +16,7 @@
 NUKE_PATH=<path-to-repo>/NUKE
 ```
 
-重新啟動 Nuke 後，選單會出現 **CHD › Afanasy Submitter**。
+重新啟動 Nuke 後，選單會出現 **Render › Afanasy Submitter**。
 
 ## Afanasy Submitter
 
