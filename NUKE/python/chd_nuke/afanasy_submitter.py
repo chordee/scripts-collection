@@ -22,6 +22,7 @@ class SubmissionSettings:
     capacity: int = 800
     priority: int = 80
     use_nukex: bool = False
+    use_write_ranges: bool = True
 
 
 AFANASY_SERVICE = "nuke"
@@ -143,13 +144,25 @@ def default_write_names(nuke_module):
     return tuple(node.fullName() for node in chosen)
 
 
-def write_frame_range(node, frame_start, frame_end):
-    """The Write's own range when Limit to Range is on, else the job's range."""
+def limit_range(node):
+    """The Write's (first, last) when Limit to Range is on, else None."""
     knobs = node.knobs()
     use_limit = knobs.get("use_limit")
     if use_limit is not None and use_limit.value():
         return int(knobs["first"].value()), int(knobs["last"].value())
-    return frame_start, frame_end
+    return None
+
+
+def write_frame_range(node, frame_start, frame_end):
+    """The Write's own range when Limit to Range is on, else the job's range."""
+    return limit_range(node) or (frame_start, frame_end)
+
+
+def block_frame_range(settings, node):
+    """The range a Write's block renders, honouring ``use_write_ranges``."""
+    if settings.use_write_ranges:
+        return write_frame_range(node, settings.frame_start, settings.frame_end)
+    return settings.frame_start, settings.frame_end
 
 
 def validate_settings(settings, nuke_module, is_file=os.path.isfile):
@@ -179,7 +192,7 @@ def validate_settings(settings, nuke_module, is_file=os.path.isfile):
             raise ValueError(f"Write node not found: {name}")
         if is_disabled(node):
             raise ValueError(f"Write node is disabled: {name}")
-        start, end = write_frame_range(node, settings.frame_start, settings.frame_end)
+        start, end = block_frame_range(settings, node)
         if start > end:
             raise ValueError(f"Write node range is empty: {name} ({start}-{end})")
         writes.append(node)
@@ -215,7 +228,7 @@ def submit_job(settings, nuke_module, af_module, is_file=os.path.isfile, environ
 
     for node in writes:
         name = node.fullName()
-        start, end = write_frame_range(node, settings.frame_start, settings.frame_end)
+        start, end = block_frame_range(settings, node)
         block = af_module.Block(name, AFANASY_SERVICE)
         block.setCommand(build_render_command(settings, script_path, name))
         block.setNumeric(start, end, settings.frames_per_task, settings.frame_step)
@@ -234,6 +247,7 @@ def session_defaults(nuke_module):
         "job_name": os.path.splitext(os.path.basename(script_path))[0],
         "nuke_path": os.path.normpath(nuke_module.EXE_PATH),
         "use_nukex": bool(nuke_module.env.get("nukex")),
+        "use_write_ranges": True,
         "write_names": default_write_names(nuke_module),
         "frame_start": int(root["first_frame"].value()),
         "frame_end": int(root["last_frame"].value()),
@@ -268,12 +282,22 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
             self.nuke_edit = QtWidgets.QLineEdit(defaults["nuke_path"])
             self.nukex_checkbox = QtWidgets.QCheckBox("NukeX (--nukex)")
             self.nukex_checkbox.setChecked(defaults["use_nukex"])
+            self.write_ranges_checkbox = QtWidgets.QCheckBox("Use Write node frame range")
+            self.write_ranges_checkbox.setToolTip(
+                "Writes with Limit to Range render their own range; "
+                "unchecked, every Write renders Frame Start - Frame End.")
+            self.write_ranges_checkbox.setChecked(defaults["use_write_ranges"])
 
             self.write_list = QtWidgets.QListWidget()
             default_names = set(defaults["write_names"])
             for node in list_write_nodes(nuke_module):
                 name = node.fullName()
-                label = f"{name}  (disabled)" if is_disabled(node) else name
+                label = name
+                limit = limit_range(node)
+                if limit:
+                    label += "  [{}-{}]".format(*limit)
+                if is_disabled(node):
+                    label += "  (disabled)"
                 item = QtWidgets.QListWidgetItem(label)
                 item.setData(QtCore.Qt.ItemDataRole.UserRole, name)
                 item.setFlags(user_checkable | enabled_flag)
@@ -296,6 +320,7 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
             form.addRow("Job Name", self.job_name_edit)
             form.addRow("Nuke", self._path_row(self.nuke_edit, nuke_button))
             form.addRow(self.nukex_checkbox)
+            form.addRow(self.write_ranges_checkbox)
             form.addRow("Write Nodes", self.write_list)
             form.addRow("Frame Start", self.frame_start_spin)
             form.addRow("Frame End", self.frame_end_spin)
@@ -348,6 +373,7 @@ def _create_dialog_class(QtWidgets, QtCore, nuke_module):
                 capacity=self.capacity_spin.value(),
                 priority=self.priority_spin.value(),
                 use_nukex=self.nukex_checkbox.isChecked(),
+                use_write_ranges=self.write_ranges_checkbox.isChecked(),
             )
 
         def _on_submit(self):

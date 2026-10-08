@@ -33,11 +33,12 @@ NUKE_PATH=<path-to-repo>/NUKE
 | Job Name | `.nk` 檔名 |
 | Nuke | 目前執行中的 Nuke（`nuke.EXE_PATH`） |
 | NukeX (`--nukex`) | 目前 session 是否為 NukeX；勾選後以 nukex_r 授權算圖 |
+| Use Write node frame range | 勾選 |
 | Write Nodes | 有選取的 Write 就只勾選取的，否則勾所有未 disable 的；Group 內的 Write 以 `Group1.Write1` 形式列出 |
 | Frame Start / End | `root` 的 first / last frame |
 | Frame Step、Frames per task、Capacity、Job Priority | 1、1、800、80 |
 
-- Write 開了 **Limit to range** 時，該 block 用 Write 自己的範圍，否則用對話框的範圍。
+- **Use Write node frame range**（預設勾選）：Write 開了 **Limit to range** 時，該 block 用 Write 自己的範圍，否則用對話框的範圍；取消勾選則所有 Write 一律用對話框的範圍。清單中有 Limit to range 的 Write 會標出其範圍，例如 `Write1  [1001-1100]`。
 - 送出前會確認並自動存檔；未存檔的新 script、未勾選任何 Write、勾選了 disabled 的 Write 都會被擋下。
 - Windows 上整串命令外再包一層引號：Afanasy 經 `cmd.exe /c` 執行時會剝掉頭尾各一個引號，否則含空白的路徑會被截斷。
 
